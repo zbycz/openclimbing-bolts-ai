@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Training Data – OpenClimbing Bolts AI</title>
+<style>
+:root {
+  --bg: #fff; --fg: #111; --muted: #666; --border: #e0e0e0;
+  --panel: #f7f7f7; --accent: #2563eb;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111; --fg: #eee; --muted: #888; --border: #2a2a2a; --panel: #1a1a1a; --accent: #60a5fa; }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; }
+header { padding: 24px 32px; border-bottom: 1px solid var(--border); }
+header h1 { font-size: 20px; font-weight: 600; }
+header p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+header a { color: var(--accent); text-decoration: none; }
+header a:hover { text-decoration: underline; }
+#grid {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 16px 32px;
+}
+#grid img {
+  width: 80px; height: 80px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--panel);
+  display: block;
+}
+#loading { padding: 40px 32px; color: var(--muted); font-size: 14px; }
+footer {
+  margin-top: 48px;
+  padding: 32px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+}
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+.schema {
+  padding: 24px 32px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.schema h2 { font-size: 15px; margin-bottom: 12px; }
+.schema pre {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-x: auto;
+  font-family: 'Menlo', 'Consolas', monospace;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Training Data – OpenClimbing Bolts AI</h1>
+  <p>1319 confirmed bolt crops from 222 climbing photos · <a href="../">← back</a></p>
+</header>
+
+<div id="loading">Loading crops…</div>
+<div id="grid"></div>
+
+<div class="schema">
+  <h2>Database schema (<a href="climbing_paths.sqlite" download>download climbing_paths.sqlite</a>)</h2>
+  <pre>
+-- Main annotation table
+CREATE TABLE crop_labels (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  image       TEXT NOT NULL,   -- "File:Photo_name.jpg" (Wikimedia Commons key)
+  position    TEXT NOT NULL,   -- "0.432,0.651B" (normalized x,y + bolt suffix)
+  cx          REAL,            -- refined bolt center x (normalized 0–1)
+  cy          REAL,            -- refined bolt center y (normalized 0–1)
+  type        TEXT,            -- "bolt" | "no-bolt" | "undecided"
+  radius_px   REAL,            -- bolt radius in original image pixels
+  radius_src  TEXT,            -- "manual" | "sam"
+  osm_source  TEXT,            -- source OSM path URL
+  updated_at  TEXT
+);
+
+-- OSM climbing path → image mapping
+CREATE TABLE climbing_paths (
+  osmId       TEXT,
+  osmType     TEXT,
+  image       TEXT,            -- Wikimedia Commons filename
+  path        TEXT             -- OSM path URL
+);
+  </pre>
+</div>
+
+<footer>
+  <a href="https://github.com/zbycz/openclimbing-bolts-ai">GitHub repository</a> ·
+  <a href="climbing_paths.sqlite" download>Download database</a>
+</footer>
+
+<script>
+fetch('crops-previews/_manifest.json')
+  .then(r => r.json())
+  .then(manifest => {
+    document.getElementById('loading').remove();
+    const grid = document.getElementById('grid');
+    for (const e of manifest) {
+      const img = document.createElement('img');
+      img.src = 'crops-previews/' + e.name;
+      img.loading = 'lazy';
+      img.title = e.image + ' · ' + e.pos;
+      grid.appendChild(img);
+    }
+  })
+  .catch(() => {
+    document.getElementById('loading').textContent = 'Failed to load manifest.';
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClimbing Bolts AI</title>
+<style>
+:root {
+  --bg: #fff; --fg: #111; --muted: #777; --border: #e0e0e0;
+  --panel: #f5f5f5; --accent: #2563eb; --btn-bg: #f0f0f0; --btn-fg: #111;
+  --btn-border: #ccc; --canvas-bg: #e8e8e8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f0f0f; --fg: #eee; --muted: #888; --border: #2a2a2a;
+    --panel: #1a1a1a; --accent: #60a5fa; --btn-bg: #1e1e1e; --btn-fg: #eee;
+    --btn-border: #3a3a3a; --canvas-bg: #1a1a1a;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+
+/* ── Landing ─────────────────────────────────────────────────────── */
+#landing {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 48px 24px; gap: 24px; text-align: center;
+}
+#landing h1 { font-size: clamp(24px, 5vw, 42px); font-weight: 700; letter-spacing: -0.5px; }
+#landing h1 span { color: var(--accent); }
+.big-btns { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+.big-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 28px 36px; border-radius: 16px; border: 2px solid var(--btn-border);
+  background: var(--btn-bg); color: var(--btn-fg); cursor: pointer;
+  font-size: 17px; font-weight: 600; min-width: 200px;
+  transition: border-color .15s, background .15s, transform .1s;
+}
+.big-btn:hover { border-color: var(--accent); background: var(--panel); transform: translateY(-2px); }
+.big-btn:active { transform: translateY(0); }
+.big-btn svg { width: 40px; height: 40px; }
+.example-btn {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font-size: 14px; text-decoration: underline; padding: 4px 8px;
+}
+.note { font-size: 13px; color: var(--muted); }
+
+/* ── Commons form ────────────────────────────────────────────────── */
+#commons-form {
+  display: flex; gap: 8px; width: 100%; max-width: 600px; flex-wrap: wrap;
+}
+#commons-url {
+  flex: 1; min-width: 0; padding: 12px 14px; border-radius: 10px;
+  border: 1.5px solid var(--btn-border); background: var(--btn-bg);
+  color: var(--fg); font-size: 14px; outline: none;
+}
+#commons-url:focus { border-color: var(--accent); }
+#commons-go {
+  padding: 12px 20px; border-radius: 10px; border: 1.5px solid var(--accent);
+  background: var(--accent); color: #fff; font-size: 14px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+#commons-error { font-size: 13px; color: #e55; width: 100%; }
+
+/* ── Viewer ──────────────────────────────────────────────────────── */
+#viewer { flex: 1; display: none; flex-direction: column; }
+#toolbar {
+  flex: 0 0 auto; background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+#toolbar button {
+  padding: 7px 14px; border-radius: 8px; border: 1px solid var(--btn-border);
+  background: var(--btn-bg); color: var(--btn-fg); cursor: pointer; font-size: 13px;
+}
+#toolbar button:hover { border-color: var(--accent); }
+#toolbar button#back-btn { font-weight: 600; }
+#infer-btn {
+  background: #1a4a8a !important; color: #fff !important;
+  border-color: #3a6aaa !important; font-weight: 700 !important; font-size: 14px !important;
+  padding: 7px 18px !important;
+}
+#infer-btn:disabled { opacity: .5; cursor: not-allowed !important; }
+#status { font-size: 12px; color: var(--muted); margin-left: auto; }
+#conf-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+#conf-row input { accent-color: var(--accent); }
+
+#canvas-area {
+  flex: 1; overflow: hidden; position: relative;
+  touch-action: none; background: var(--canvas-bg);
+}
+canvas { position: absolute; top: 0; left: 0; display: block; transform-origin: 0 0; image-rendering: auto; }
+#zoom-ctl { position: absolute; right: 10px; bottom: 10px; z-index: 10; display: flex; gap: 6px; }
+#zoom-ctl button {
+  width: 38px; height: 38px; border-radius: 8px; background: rgba(40,40,40,.85);
+  border: 1px solid #555; color: #fff; font-size: 20px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────── */
+footer {
+  flex: 0 0 auto; padding: 16px 24px;
+  border-top: 1px solid var(--border); font-size: 12px; color: var(--muted);
+  display: flex; gap: 16px; justify-content: center;
+}
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- ── Landing ──────────────────────────────────────────────────────────── -->
+<div id="landing">
+  <h1>OpenClimbing <span>Bolts</span> AI</h1>
+
+  <div class="big-btns">
+    <button class="big-btn" id="upload-btn">
+      <!-- upload icon -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      Upload photo
+    </button>
+
+    <button class="big-btn" id="commons-btn">
+      <!-- Wikimedia Commons globe icon -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 2a14.5 14.5 0 0 0 0 20M12 2a14.5 14.5 0 0 1 0 20M2 12h20"/>
+        <path d="M3.5 6.5h17M3.5 17.5h17"/>
+      </svg>
+      Select from Wikimedia Commons
+    </button>
+  </div>
+
+  <div id="commons-form" style="display:none">
+    <input id="commons-url" type="url"
+      placeholder="https://commons.wikimedia.org/wiki/File:Alkazar_-_Dolce.jpg"
+      autocomplete="off" spellcheck="false">
+    <button id="commons-go">Load image</button>
+    <div id="commons-error" style="display:none"></div>
+  </div>
+
+  <button class="example-btn" id="example-btn">Example image</button>
+  <p class="note">The photo is fully processed locally in your browser.</p>
+</div>
+
+<input id="file-input" type="file" accept="image/*" style="display:none">
+
+<!-- ── Viewer ──────────────────────────────────────────────────────────── -->
+<div id="viewer">
+  <div id="toolbar">
+    <button id="back-btn">← New photo</button>
+    <button id="infer-btn" disabled>Run YOLO inference</button>
+    <div id="conf-row">
+      Conf: <input type="range" id="conf-slider" min="1" max="95" value="25">
+      <span id="conf-val">25%</span>
+    </div>
+    <span id="status">Loading model…</span>
+  </div>
+  <div id="canvas-area">
+    <canvas id="cv"></canvas>
+    <div id="zoom-ctl">
+      <button id="zoom-out">−</button>
+      <button id="zoom-fit" style="font-size:14px">⤢</button>
+      <button id="zoom-in">+</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <a href="https://github.com/zbycz/openclimbing-bolts-ai">GitHub</a>
+  <a href="training/">Training data</a>
+</footer>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let session = null, modelLoading = false;
+let photoImg = null, yoloBoxes = [], _hoveredBox = -1;
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const status = document.getElementById('status');
+const landing = document.getElementById('landing');
+const viewer  = document.getElementById('viewer');
+const area    = document.getElementById('canvas-area');
+
+// ── Commons URL helper (Wikimedia API) ────────────────────────────────────────
+async function getCommonsImageUrl(input) {
+  let title = input.trim();
+  if (title.includes('commons.wikimedia.org')) {
+    const m = title.match(/\/wiki\/(.+?)(\?|$)/);
+    title = m ? decodeURIComponent(m[1]) : title;
+  }
+  if (!title.startsWith('File:')) title = 'File:' + title.replace(/^.*\//, '');
+  const api = 'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
+    action: 'query', titles: title, prop: 'imageinfo',
+    iiprop: 'url', format: 'json', origin: '*'
+  });
+  const data = await fetch(api).then(r => r.json());
+  const page = Object.values(data.query.pages)[0];
+  if (!page.imageinfo) throw new Error('Image not found on Wikimedia Commons');
+  return page.imageinfo[0].url;
+}
+
+// ── Zoom / pan ────────────────────────────────────────────────────────────────
+let zScale = 1, zTx = 0, zTy = 0, zFit = 1;
+function applyTransform() {
+  cv.style.transform = `translate(${zTx}px,${zTy}px) scale(${zScale})`;
+}
+function fitToView() {
+  if (!cv.width || !cv.height) return;
+  const aw = area.clientWidth, ah = area.clientHeight;
+  zFit = Math.min(aw / cv.width, ah / cv.height);
+  zScale = zFit;
+  zTx = (aw - cv.width * zScale) / 2;
+  zTy = (ah - cv.height * zScale) / 2;
+  applyTransform();
+}
+function zoomAt(px, py, factor) {
+  const ns = Math.max(zFit * 0.5, Math.min(zFit * 40, zScale * factor));
+  const k = ns / zScale;
+  zTx = px - (px - zTx) * k; zTy = py - (py - zTy) * k; zScale = ns;
+  applyTransform();
+}
+area.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = area.getBoundingClientRect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1/1.15);
+}, { passive: false });
+document.getElementById('zoom-in').onclick  = () => zoomAt(area.clientWidth/2, area.clientHeight/2, 1.4);
+document.getElementById('zoom-out').onclick = () => zoomAt(area.clientWidth/2, area.clientHeight/2, 1/1.4);
+document.getElementById('zoom-fit').onclick = () => fitToView();
+window.addEventListener('resize', fitToView);
+
+const pointers = new Map(); let pinchPrevDist = 0;
+area.addEventListener('pointerdown', e => { area.setPointerCapture(e.pointerId); pointers.set(e.pointerId, {x:e.clientX,y:e.clientY}); });
+area.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId);
+  pointers.set(e.pointerId, {x:e.clientX,y:e.clientY});
+  const r = area.getBoundingClientRect();
+  if (pointers.size === 1) { zTx += e.clientX - prev.x; zTy += e.clientY - prev.y; applyTransform(); }
+  else if (pointers.size === 2) {
+    const pts = [...pointers.values()];
+    const dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+    const mx = (pts[0].x+pts[1].x)/2-r.left, my = (pts[0].y+pts[1].y)/2-r.top;
+    if (pinchPrevDist > 0) zoomAt(mx, my, dist/pinchPrevDist);
+    pinchPrevDist = dist;
+  }
+});
+function endPtr(e) { pointers.delete(e.pointerId); if (pointers.size < 2) pinchPrevDist = 0; }
+area.addEventListener('pointerup', endPtr);
+area.addEventListener('pointercancel', endPtr);
+area.addEventListener('dblclick', e => { const r=area.getBoundingClientRect(); zoomAt(e.clientX-r.left,e.clientY-r.top,zScale>zFit*1.5?zFit/zScale:3); });
+
+// ── Hover on YOLO box → hide it ───────────────────────────────────────────────
+area.addEventListener('mousemove', e => {
+  if (!photoImg || !yoloBoxes.length) return;
+  const ar = area.getBoundingClientRect();
+  const mx = (e.clientX-ar.left-zTx)/zScale, my = (e.clientY-ar.top-zTy)/zScale;
+  const W = photoImg.naturalWidth, H = photoImg.naturalHeight;
+  const conf = document.getElementById('conf-slider').value / 100;
+  let found = -1;
+  for (let i = 0; i < yoloBoxes.length; i++) {
+    const b = yoloBoxes[i];
+    if (b.score < conf) continue;
+    if (mx>=(b.cx-b.w/2)*W && mx<=(b.cx+b.w/2)*W && my>=(b.cy-b.h/2)*H && my<=(b.cy+b.h/2)*H) { found=i; break; }
+  }
+  if (found !== _hoveredBox) { _hoveredBox = found; drawOverlay(); }
+});
+area.addEventListener('mouseleave', () => { if (_hoveredBox !== -1) { _hoveredBox = -1; drawOverlay(); } });
+
+// ── Draw ──────────────────────────────────────────────────────────────────────
+function drawOverlay() {
+  if (!photoImg) return;
+  ctx.drawImage(photoImg, 0, 0);
+  const conf = document.getElementById('conf-slider').value / 100;
+  for (let i = 0; i < yoloBoxes.length; i++) {
+    if (yoloBoxes[i].score < conf || i === _hoveredBox) continue;
+    const b = yoloBoxes[i];
+    const x=(b.cx-b.w/2)*photoImg.naturalWidth, y=(b.cy-b.h/2)*photoImg.naturalHeight;
+    const w=b.w*photoImg.naturalWidth, h=b.h*photoImg.naturalHeight;
+    ctx.strokeStyle = '#ff0'; ctx.lineWidth = 3; ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle = 'rgba(255,220,0,0.85)';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText((b.score*100).toFixed(1)+'%', x+4, y+17);
+  }
+}
+document.getElementById('conf-slider').addEventListener('input', e => {
+  document.getElementById('conf-val').textContent = e.target.value + '%';
+  drawOverlay();
+});
+
+// ── Show photo ────────────────────────────────────────────────────────────────
+function showPhoto(img) {
+  photoImg = img; yoloBoxes = []; _hoveredBox = -1;
+  cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+  landing.style.display = 'none';
+  viewer.style.display = 'flex';
+  drawOverlay(); fitToView();
+  if (session) {
+    document.getElementById('infer-btn').disabled = false;
+    runInference();
+  }
+}
+
+async function loadFromUrl(url) {
+  status.textContent = 'Loading image…';
+  return new Promise((res, rej) => {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error('Failed to load image'));
+    img.src = url;
+  });
+}
+
+// ── ONNX model ────────────────────────────────────────────────────────────────
+async function ensureModel() {
+  if (session) return session;
+  if (modelLoading) return null;
+  modelLoading = true;
+  status.textContent = 'Loading model…';
+  try {
+    const ort = window.ort;
+    ort.env.wasm.numThreads = navigator.hardwareConcurrency > 4 ? 2 : 1;
+    session = await ort.InferenceSession.create('./models/openclimbing-bolts-v1.onnx', { executionProviders: ['wasm'] });
+    status.textContent = 'Model ready.';
+    document.getElementById('infer-btn').disabled = !photoImg;
+  } catch(e) {
+    status.textContent = 'Model error: ' + e.message;
+  }
+  modelLoading = false;
+  return session;
+}
+
+// ── Inference ─────────────────────────────────────────────────────────────────
+const TILE = 1024, OVERLAP = 0.20;
+function tilePositions(size) {
+  const stride = Math.round(TILE * (1-OVERLAP));
+  if (size <= TILE) return [0];
+  const pos = [];
+  for (let p = 0; p <= size-TILE; p += stride) pos.push(p);
+  if (pos[pos.length-1] !== size-TILE) pos.push(size-TILE);
+  return pos;
+}
+function iou(a,b) {
+  const ix=Math.max(0,Math.min(a.cx+a.w/2,b.cx+b.w/2)-Math.max(a.cx-a.w/2,b.cx-b.w/2));
+  const iy=Math.max(0,Math.min(a.cy+a.h/2,b.cy+b.h/2)-Math.max(a.cy-a.h/2,b.cy-b.h/2));
+  const inter=ix*iy; return inter/(a.w*a.h+b.w*b.h-inter);
+}
+function nms(boxes) {
+  boxes = boxes.slice().sort((a,b)=>b.score-a.score);
+  const keep=[],used=new Uint8Array(boxes.length);
+  for(let i=0;i<boxes.length;i++){if(used[i])continue;keep.push(boxes[i]);for(let j=i+1;j<boxes.length;j++)if(!used[j]&&iou(boxes[i],boxes[j])>.45)used[j]=1;}
+  return keep;
+}
+function tileTensor(img, tx, ty, tw, th) {
+  const off=document.createElement('canvas'); off.width=TILE; off.height=TILE;
+  const oc=off.getContext('2d'); oc.fillStyle='#808080'; oc.fillRect(0,0,TILE,TILE);
+  oc.drawImage(img,tx,ty,tw,th,0,0,tw,th);
+  const d=oc.getImageData(0,0,TILE,TILE).data, n=TILE*TILE, t=new Float32Array(3*n);
+  for(let i=0;i<n;i++){t[i]=d[i*4]/255;t[n+i]=d[i*4+1]/255;t[2*n+i]=d[i*4+2]/255;}
+  return t;
+}
+
+async function runInference() {
+  if (!photoImg) return;
+  const sess = await ensureModel(); if (!sess) return;
+  const btn = document.getElementById('infer-btn');
+  btn.disabled = true;
+  const W=photoImg.naturalWidth, H=photoImg.naturalHeight;
+  const conf=document.getElementById('conf-slider').value/100;
+  const xs=tilePositions(W), ys=tilePositions(H), nTiles=xs.length*ys.length;
+  const raw=[], inName=sess.inputNames[0];
+  let done=0;
+  try {
+    for(const ty of ys) for(const tx of xs) {
+      const tw=Math.min(TILE,W-tx), th=Math.min(TILE,H-ty);
+      const t=tileTensor(photoImg,tx,ty,tw,th);
+      const inp=new ort.Tensor('float32',t,[1,3,TILE,TILE]);
+      const out=await sess.run({[inName]:inp});
+      const od=out[sess.outputNames[0]], data=od.data, na=od.dims[2];
+      for(let i=0;i<na;i++){
+        const s=data[4*na+i]; if(s<conf) continue;
+        if(data[0*na+i]>tw||data[1*na+i]>th) continue;
+        raw.push({cx:(tx+data[0*na+i])/W,cy:(ty+data[1*na+i])/H,w:data[2*na+i]/W,h:data[3*na+i]/H,score:s});
+      }
+      done++; btn.textContent=`Running… ${done}/${nTiles}`;
+      status.textContent=`Tile ${done}/${nTiles} · ${raw.length} candidates`;
+      await new Promise(r=>setTimeout(r,0));
+    }
+    yoloBoxes=nms(raw); drawOverlay();
+    const shown=yoloBoxes.filter(b=>b.score>=conf);
+    status.textContent=`${shown.length} detections from ${nTiles} tiles`;
+  } catch(e) {
+    status.textContent='Inference error: '+e.message;
+  } finally {
+    btn.disabled=false; btn.textContent='Run YOLO inference';
+  }
+}
+
+document.getElementById('infer-btn').onclick = runInference;
+document.getElementById('back-btn').onclick = () => {
+  viewer.style.display='none'; landing.style.display='flex';
+  photoImg=null; yoloBoxes=[];
+};
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+document.getElementById('upload-btn').onclick = () => document.getElementById('file-input').click();
+document.getElementById('file-input').onchange = e => {
+  const file = e.target.files[0]; if (!file) return;
+  const img = new Image();
+  img.onload = () => showPhoto(img);
+  img.src = URL.createObjectURL(file);
+  e.target.value = '';
+};
+
+document.getElementById('commons-btn').onclick = () => {
+  const form = document.getElementById('commons-form');
+  form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+  if (form.style.display === 'flex') document.getElementById('commons-url').focus();
+};
+
+async function loadCommons() {
+  const val = document.getElementById('commons-url').value.trim();
+  const err = document.getElementById('commons-error');
+  err.style.display = 'none';
+  try {
+    const url = await getCommonsImageUrl(val || 'File:Alkazar_-_Dolce.jpg');
+    const img = await loadFromUrl(url);
+    showPhoto(img);
+  } catch(e) {
+    err.textContent = e.message; err.style.display = 'block';
+  }
+}
+document.getElementById('commons-go').onclick = loadCommons;
+document.getElementById('commons-url').addEventListener('keydown', e => { if(e.key==='Enter') loadCommons(); });
+
+document.getElementById('example-btn').onclick = () => {
+  const form = document.getElementById('commons-form');
+  form.style.display = 'flex';
+  document.getElementById('commons-url').value = 'https://commons.wikimedia.org/wiki/File:Alkazar_-_Dolce.jpg';
+  loadCommons();
+};
+
+// ── Boot: load ONNX runtime then model ───────────────────────────────────────
+const s = document.createElement('script');
+s.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js';
+s.onload = () => ensureModel();
+s.onerror = () => { status.textContent = 'Failed to load onnxruntime-web.'; };
+document.head.appendChild(s);
+</script>
+</body>
+</html>
