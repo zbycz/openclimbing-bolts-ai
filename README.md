@@ -19,6 +19,10 @@ Because the features (bolts) are sometimes only few pixes big, we had to split t
 
 The inference runs in browser about 10 seconds per image. Measured on Macbook Air M1 and iPhone 12 mini. We use [onnxruntime-web](https://github.com/Microsoft/onnxruntime) with WASM backend. Everything runs locally without sending any data to a server.
 
+
+[![trainging data preview](./training/crops-previews/training_data_preview.jpg)](https://zbycz.github.io/openclimbing-bolts-ai/training/)
+
+
 ## Attribution
 
 This model was trained on data from OpenStreetMap (ODbL), and photos from Wikimedia Commons (CC0 / CC BY / CC BY-SA) by:
@@ -37,3 +41,4 @@ This model was trained on data from OpenStreetMap (ODbL), and photos from Wikime
 ## License
 
 The model weights: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+
