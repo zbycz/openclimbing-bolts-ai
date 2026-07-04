@@ -19,4 +19,21 @@ Because the features (bolts) are sometimes only few pixes big, we had to split t
 
 The inference runs in browser about 10 seconds per image. Measured on Macbook Air M1 and iPhone 12 mini. We use [onnxruntime-web](https://github.com/Microsoft/onnxruntime) with WASM backend. Everything runs locally without sending any data to a server.
 
+## Attribution
 
+This model was trained on data from OpenStreetMap (ODbL), and photos from Wikimedia Commons (CC0 / CC BY / CC BY-SA) by:
+[Alensiljak](https://commons.wikimedia.org/wiki/User:Alensiljak) ·
+[Daniel Baránek](https://commons.wikimedia.org/wiki/User:Daniel_Bar%C3%A1nek) ·
+[Jvaclavik](https://commons.wikimedia.org/wiki/User:Jvaclavik) ·
+[Supernova-implicate-awoke](https://commons.wikimedia.org/wiki/User:Supernova-implicate-awoke) ·
+[Headbucket](https://commons.wikimedia.org/wiki/User:Headbucket) ·
+[Osmwithspace](https://commons.wikimedia.org/wiki/User:Osmwithspace) ·
+[Zbytovsky](https://commons.wikimedia.org/wiki/User:Zbytovsky) ·
+[GabriCosta00](https://commons.wikimedia.org/wiki/User:GabriCosta00) ·
+[Geogast](https://commons.wikimedia.org/wiki/User:Geogast) ·
+[Kuba Turek](https://commons.wikimedia.org/wiki/User:Kuba_Turek) ·
+[Eric](https://commons.wikimedia.org/wiki/File:Narrenturm,_top.jpg)
+
+## License
+
+The model weights: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
