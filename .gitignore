@@ -1,0 +1,4 @@
+data/
+*.sqlite
+~/.kaggle/
+__pycache__/

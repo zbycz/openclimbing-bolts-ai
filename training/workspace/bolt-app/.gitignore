@@ -1,0 +1,8 @@
+# symlink na 2.3 GB stažených fotek – necommitovat
+images
+*.log
+__pycache__/
+
+# server-generované výřezy
+cache/
+crops.json

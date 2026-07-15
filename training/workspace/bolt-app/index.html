@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bolt Viewer</title>
+<style>
+  :root { --red: #ff2222; --bg: #111; --fg: #eee; --panel: #1c1c1c; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    line-height: 1.4;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--panel); padding: 10px 14px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border-bottom: 1px solid #333;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button {
+    background: #2a2a2a; color: var(--fg); border: 1px solid #444;
+    padding: 8px 14px; border-radius: 6px; font-size: 14px; cursor: pointer;
+  }
+  button:hover { background: #383838; }
+  button:disabled { opacity: .4; cursor: default; }
+  .counter { font-variant-numeric: tabular-nums; font-size: 13px; color: #aaa; }
+  input[type=number] { width: 70px; background:#2a2a2a; color:var(--fg);
+    border:1px solid #444; border-radius:6px; padding:6px; }
+  main { padding: 14px; max-width: 1100px; margin: 0 auto; }
+  .meta { font-size: 13px; color: #aaa; margin: 0 0 12px; word-break: break-word; }
+  .overview { position: relative; width: 100%; line-height: 0; }
+  .overview img { width: 100%; height: auto; display: block; }
+  .overview svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .overview rect { fill: rgba(255,34,34,.12); stroke: var(--red); stroke-width: 2;
+    vector-effect: non-scaling-stroke; }
+  .overview rect.hl { fill: rgba(255,212,0,.22); stroke: #ffd400; stroke-width: 4; }
+  .crop.hl { outline: 3px solid #ffd400; box-shadow: 0 0 14px rgba(255,212,0,.55); }
+  .crop.hl .lbl b { color: #ffd400; }
+  h2 { font-size: 15px; margin: 22px 0 10px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+  .crops { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  .crop { background: var(--panel); border: 1px solid #333; border-radius: 8px; padding: 8px; }
+  .crop canvas {
+    width: 100%; height: auto; display: block; border-radius: 4px;
+    image-rendering: auto; background:#000;
+  }
+  .crop .lbl { font-size: 12px; color: #bbb; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .crop .lbl b { color: var(--red); }
+  footer { text-align:center; color:#555; font-size:12px; padding: 20px; }
+  .loading { color:#888; padding: 40px 0; text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <button id="prev">‹ Předchozí</button>
+  <button id="next">Další ›</button>
+  <span class="counter"><span id="idx">0</span> / <span id="total">0</span></span>
+  <input type="number" id="jump" min="1" title="Skok na index">
+  <a href="/crops" style="color:#7bf;text-decoration:none;font-size:14px;white-space:nowrap">Výřezy →</a>
+  <h1 id="title">…</h1>
+</header>
+
+<main>
+  <p class="meta" id="meta"></p>
+  <div class="overview" id="overview"><div class="loading">Načítám…</div></div>
+
+  <h2>Detailní výřezy borháků (B)</h2>
+  <div class="crops" id="crops"></div>
+</main>
+
+<footer>Bolt Viewer · červený čtvereček = ±20 px od pozice borháku</footer>
+
+<script>
+const HALF = 20;          // ±20 px od pozice boltu (v původním rozlišení)
+const CROP_DISPLAY = 200; // cílová zobrazená velikost výřezu (px), responzivně max 100 %
+
+let data = [];
+let cur = 0;
+let highlight = null;   // {file, pos?} nebo {file, x, y} – borhák ke zvýraznění
+let cropsMap = {};      // file -> { "x,y": {order, pos} }  (pevné pořadí z DB/crops.json)
+
+const el = id => document.getElementById(id);
+
+// klíč pro spárování souřadnic data.json ↔ crops.json (obojí ≤3 desetinná místa)
+const ckey = (x, y) => `${(+x).toFixed(3)},${(+y).toFixed(3)}`;
+
+function lookupCrop(file, fx, fy) {
+  const m = cropsMap[file];
+  return m ? m[ckey(fx, fy)] : undefined;
+}
+
+async function boot() {
+  const [d, crops] = await Promise.all([
+    fetch('data.json').then(r => r.json()),
+    fetch('crops.json').then(r => r.json()).catch(() => []),
+  ]);
+  data = d;
+  // mapa pevného pořadí z crops.json (= bolt_order v DB)
+  for (const c of crops) {
+    (cropsMap[c.file] = cropsMap[c.file] || {})[ckey(c.x, c.y)] =
+      { order: c.order, pos: c.pos };
+  }
+  el('total').textContent = data.length;
+  el('jump').max = data.length;
+
+  const p = new URLSearchParams(location.search);
+  const file = p.get('file');
+  if (file) {
+    const i = data.findIndex(d => d.file === file);
+    if (i >= 0) cur = i;
+    const pos = p.get('pos');
+    const bx = parseFloat(p.get('bx')), by = parseFloat(p.get('by'));
+    if (pos) highlight = { file, pos };
+    else if (!isNaN(bx) && !isNaN(by)) highlight = { file, x: bx, y: by };
+  } else {
+    const h = location.hash.match(/^#(\d+)$/);
+    cur = h ? Math.min(Math.max(+h[1]-1, 0), data.length-1) : 0;
+  }
+  render();
+}
+
+function isHl(item, fx, fy) {
+  if (!highlight || highlight.file !== item.file) return false;
+  if (highlight.pos) {                     // přesné spárování přes pos z DB
+    const oc = lookupCrop(item.file, fx, fy);
+    return oc && oc.pos === highlight.pos;
+  }
+  return Math.abs(fx - highlight.x) < 1e-3 && Math.abs(fy - highlight.y) < 1e-3;
+}
+
+function render() {
+  const item = data[cur];
+  el('idx').textContent = cur + 1;
+  el('jump').value = cur + 1;
+  el('title').textContent = item.file;
+  el('title').title = item.file;
+  el('meta').textContent = `${item.image} · ${item.bolts.length} borháků`;
+  el('prev').disabled = cur === 0;
+  el('next').disabled = cur === data.length - 1;
+  location.hash = String(cur + 1);
+
+  const overview = el('overview');
+  const crops = el('crops');
+  overview.innerHTML = '<div class="loading">Načítám obrázek…</div>';
+  crops.innerHTML = '';
+
+  const img = new Image();
+  img.onload = () => buildView(img, item, overview, crops);
+  img.onerror = () => { overview.innerHTML = '<div class="loading">⚠ Obrázek se nepodařilo načíst.</div>'; };
+  img.src = 'images/' + encodeURIComponent(item.file);
+}
+
+function buildView(img, item, overview, crops) {
+  const W = img.naturalWidth, H = img.naturalHeight;
+
+  // --- přehledový obrázek s SVG overlayem ---
+  overview.innerHTML = '';
+  const shown = new Image();
+  shown.src = img.src;
+  overview.appendChild(shown);
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  for (const [fx, fy] of item.bolts) {
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r.setAttribute('x', fx * W - HALF);
+    r.setAttribute('y', fy * H - HALF);
+    r.setAttribute('width', HALF * 2);
+    r.setAttribute('height', HALF * 2);
+    if (isHl(item, fx, fy)) r.classList.add('hl');
+    svg.appendChild(r);
+  }
+  overview.appendChild(svg);
+
+  // --- výřezy jednotlivých boltů ---
+  let hlWrap = null;
+  item.bolts.forEach(([fx, fy], i) => {
+    const cx = fx * W, cy = fy * H;
+    const sx = Math.max(0, Math.min(cx - HALF, W - HALF * 2));
+    const sy = Math.max(0, Math.min(cy - HALF, H - HALF * 2));
+
+    const wrap = document.createElement('div');
+    wrap.className = 'crop';
+    if (isHl(item, fx, fy)) { wrap.classList.add('hl'); hlWrap = wrap; }
+    const cv = document.createElement('canvas');
+    cv.width = CROP_DISPLAY;
+    cv.height = CROP_DISPLAY;
+    const ctx = cv.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, sx, sy, HALF * 2, HALF * 2, 0, 0, CROP_DISPLAY, CROP_DISPLAY);
+
+    // červený rámeček do výřezu
+    ctx.strokeStyle = '#ff2222';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1.5, 1.5, CROP_DISPLAY - 3, CROP_DISPLAY - 3);
+
+    const lbl = document.createElement('div');
+    lbl.className = 'lbl';
+    const oc = lookupCrop(item.file, fx, fy);   // pevné pořadí z DB
+    const num = oc ? oc.order : (i + 1);
+    lbl.innerHTML = `<b>#${num}</b> · ${(fx*100).toFixed(1)} %, ${(fy*100).toFixed(1)} %`;
+
+    wrap.appendChild(cv);
+    wrap.appendChild(lbl);
+    crops.appendChild(wrap);
+  });
+
+  // doroluj na zvýrazněný výřez (z odkazu z /crops)
+  if (hlWrap) setTimeout(() => hlWrap.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+}
+
+function go(d) {
+  cur = Math.min(Math.max(cur + d, 0), data.length - 1);
+  render();
+  scrollTo(0, 0);
+}
+
+el('prev').onclick = () => go(-1);
+el('next').onclick = () => go(1);
+el('jump').onchange = e => {
+  const v = parseInt(e.target.value, 10);
+  if (v >= 1 && v <= data.length) { cur = v - 1; render(); scrollTo(0,0); }
+};
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowLeft') go(-1);
+  if (e.key === 'ArrowRight') go(1);
+});
+
+boot();
+</script>
+</body>
+</html>
