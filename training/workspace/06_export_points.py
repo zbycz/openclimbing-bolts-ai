@@ -4,7 +4,12 @@ Step 06: Export annotations from crop_labels to points.json for the Kaggle train
 
 Output: data/bolt-points/points.json
   { "Foo.jpg": [[cx, cy, radius_px], ...], ... }
-  - only type='bolt' or type='undecided' (no-bolt entries are skipped)
+  - only images with zero 'undecided' crops are included (i.e. fully reviewed images) —
+    an image with any unreviewed crop is skipped entirely, so unconfirmed candidates
+    never leak into training as false ground truth.
+  - within an included image, only type='bolt' crops become positive points; a fully
+    reviewed image with no confirmed bolts is still included, as an empty list (a true
+    negative for the tiler).
   - radius_px may be null (kernel uses the default 12px)
 
 Usage:
@@ -28,25 +33,34 @@ def main():
     conn = sqlite3.connect(args.db)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT image, cx, cy, radius_px "
-        "FROM crop_labels "
-        "WHERE type IN ('bolt', 'undecided')"
+        "SELECT image, type, cx, cy, radius_px FROM crop_labels"
     ).fetchall()
     conn.close()
 
-    points: dict[str, list] = defaultdict(list)
+    by_image = defaultdict(list)
     for r in rows:
-        fname = r["image"].removeprefix("File:")
-        points[fname].append([r["cx"], r["cy"], r["radius_px"]])
+        by_image[r["image"]].append(r)
+
+    points: dict[str, list] = {}
+    n_skipped_undecided = 0
+    for image, rs in by_image.items():
+        if any(r["type"] == "undecided" for r in rs):
+            n_skipped_undecided += 1
+            continue
+        fname = image.removeprefix("File:")
+        points[fname] = [[r["cx"], r["cy"], r["radius_px"]]
+                          for r in rs if r["type"] == "bolt"]
 
     os.makedirs(args.out, exist_ok=True)
     out_path = os.path.join(args.out, "points.json")
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(dict(points), f, ensure_ascii=False)
+        json.dump(points, f, ensure_ascii=False)
 
     n_bolts = sum(len(v) for v in points.values())
     n_with_r = sum(1 for v in points.values() for p in v if p[2] is not None)
-    print(f"Photos: {len(points)}")
+    n_neg_imgs = sum(1 for v in points.values() if not v)
+    print(f"Photos: {len(points)} ({n_neg_imgs} pure negatives, "
+          f"{n_skipped_undecided} skipped for having unreviewed crops)")
     print(f"Points: {n_bolts} ({n_with_r} with radius_px, {n_bolts - n_with_r} without)")
     print(f"Written: {out_path} ({os.path.getsize(out_path) // 1024} KB)")
 
