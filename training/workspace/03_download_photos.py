@@ -12,9 +12,15 @@ the labeling app / DB refer to them by the display form with spaces
 from the underscore form and save the local file under the space form, so the
 app finds the photo with no renaming.
 
-Delays: 60s between files, 3600s (1h) on HTTP 429 / block. Idempotent: files
-already present (non-empty) on disk are skipped, so re-running only fetches
-what's still missing.
+Delays: 60s between files, 3600s (1h) on HTTP 429 / block. The pause follows a
+successful download only — skipped files cost nothing, so a re-run over photos
+that are all present finishes in well under a second.
+
+Idempotent: files already present (non-empty) on disk are skipped, so re-running
+only fetches what's still missing. Which ones those are is worked out before the
+first request, so the run reports "Already on disk: N — skipping" up front and
+the [i/N] counter tracks photos actually being fetched, not every photo in the
+DB.
 
 Usage:
   python3 03_download_photos.py
@@ -84,6 +90,11 @@ def get_images(db_path: str) -> list[str]:
     return images
 
 
+def already_have(dest: str) -> bool:
+    """A photo counts as downloaded only if it is on disk and non-empty."""
+    return os.path.exists(dest) and os.path.getsize(dest) > 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="data/climbing_paths.sqlite")
@@ -92,17 +103,37 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     images = get_images(args.db)
-    total = len(images)
-    print(f"Photos to download: {total}", flush=True)
 
-    skipped = downloaded = failed = 0
-
-    for idx, file_tag in enumerate(images, 1):
+    # Work out up front what is actually missing, so the progress counter can
+    # count the real work instead of every photo in the DB. Checking the disk
+    # is instant; only the downloads themselves are slow.
+    todo = []
+    for file_tag in images:
         url, filename = commons_url(file_tag)
         dest = os.path.join(args.out, filename)
+        if not already_have(dest):
+            todo.append((url, filename, dest))
 
-        if os.path.exists(dest) and os.path.getsize(dest) > 0:
-            skipped += 1
+    total = len(todo)
+    on_disk = len(images) - total
+    print(f"Photos in DB: {len(images)}", flush=True)
+    print(f"Already on disk: {on_disk} — skipping", flush=True)
+    print(f"To download: {total}", flush=True)
+    if total:
+        print(f"(~{total * (DELAY_NORMAL + 3) / 3600:.1f} h at one photo per "
+              f"{DELAY_NORMAL}s)", flush=True)
+    else:
+        print("Nothing to do.", flush=True)
+        return
+
+    downloaded = failed = appeared = 0
+
+    for idx, (url, filename, dest) in enumerate(todo, 1):
+        # Re-check: a long run gives another process time to fetch a photo.
+        if already_have(dest):
+            print(f"[{idx}/{total}] Appeared meanwhile, skipping: {filename}",
+                  flush=True)
+            appeared += 1
             continue
 
         print(f"[{idx}/{total}] Downloading: {filename}", flush=True)
@@ -127,11 +158,16 @@ def main():
             print(f"         FAILED after {MAX_RETRIES} attempts.", flush=True)
             failed += 1
 
+        # Only a real download earns the pause; skips cost nothing.
         if idx < total and success:
             time.sleep(DELAY_NORMAL)
 
-    print(f"\nDone: {downloaded} downloaded, {skipped} skipped, {failed} failed",
-          flush=True)
+    summary = f"\nDone: {downloaded}/{total} downloaded, {failed} failed"
+    if appeared:
+        summary += f", {appeared} appeared meanwhile"
+    if on_disk:
+        summary += f" ({on_disk} were already on disk before the run)"
+    print(summary, flush=True)
 
 
 if __name__ == "__main__":
