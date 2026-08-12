@@ -1240,7 +1240,20 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   :root {{ --red:#ff2222; --bg:#111; --fg:#eee; --panel:#1c1c1c; }}
   * {{ box-sizing:border-box; }}
   body {{ margin:0; background:var(--bg); color:var(--fg);
-    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }}
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    /* Labelování je samý tap a tah po obrázku, takže výběr textu tu jen
+       překáží: iOS z dlouhého stisku dělá lupu a modrý výběr, Android modré
+       úchyty. Vypnuto všude, pole formulářů si to vrací níž. */
+    -webkit-user-select:none; user-select:none;
+    -webkit-touch-callout:none;              /* iOS: žádná lupa ani nabídka */
+    -webkit-tap-highlight-color:transparent; /* Android: žádný modrý záblesk */
+    /* Vodorovné přetažení nesmí prohlížeči znamenat krok zpět v historii —
+       tahem po výřezu se posouvá kolečko a nechceme odejít ze stránky. */
+    overscroll-behavior-x:none; }}
+  html {{ overscroll-behavior-x:none; }}
+  /* do vstupních polí se text psát a označovat musí */
+  input, textarea, select {{ -webkit-user-select:text; user-select:text;
+    -webkit-touch-callout:default; }}
   header {{ position:static; background:var(--panel);
     border-bottom:1px solid #333; padding:10px 14px; display:flex; gap:12px;
     align-items:center; flex-wrap:wrap; }}
@@ -1264,7 +1277,15 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   .mobile-only {{ display:none; }}
   @media (max-width:700px) {{
     .mobile-only {{ display:inline-block; }}
-    .grid.onecol {{ grid-template-columns:1fr; max-width:none; gap:18px; }}
+    /* Jeden sloupec = fotka přes celou šířku displeje. Mřížka i dlaždice
+       proto zahazují boční odsazení, rámeček a zaoblení; text uvnitř si
+       odsazení bere sám, aby nelepil na okraj. */
+    .grid.onecol {{ grid-template-columns:1fr; max-width:none; gap:18px;
+      padding-left:0; padding-right:0; }}
+    .grid.onecol .cell {{ padding-left:0; padding-right:0; border-radius:0;
+      border-left:none; border-right:none; }}
+    .grid.onecol .cap,
+    .grid.onecol .sliders {{ padding-left:8px; padding-right:8px; }}
     .grid.onecol .cap {{ font-size:14px; }}
     /* mobil: zelený odznak 2× větší a dobře klikací (žádný dwell) */
     .cell.t-bolt .badge-yes {{ width:60px; height:60px; font-size:34px;
