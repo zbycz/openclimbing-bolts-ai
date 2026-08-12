@@ -30,6 +30,10 @@
   input[type=number] { width: 70px; background:#2a2a2a; color:var(--fg);
     border:1px solid #444; border-radius:6px; padding:6px; }
   main { padding: 14px; max-width: 1100px; margin: 0 auto; }
+  /* Výřezy chceme přes celou šířku okna, přehledovku dál v 1100px sloupci.
+     Full-bleed: roztáhni se na šířku viewportu bez ohledu na max-width rodiče. */
+  .fullbleed { width: 100vw; margin-left: calc(50% - 50vw);
+    margin-right: calc(50% - 50vw); padding: 0 14px; }
   .meta { font-size: 13px; color: #aaa; margin: 0 0 12px; word-break: break-word; }
   .overview { position: relative; width: 100%; line-height: 0; }
   .overview img { width: 100%; height: auto; display: block; }
@@ -40,7 +44,9 @@
   .crop.hl { outline: 3px solid #ffd400; box-shadow: 0 0 14px rgba(255,212,0,.55); }
   .crop.hl .lbl b { color: #ffd400; }
   h2 { font-size: 15px; margin: 22px 0 10px; border-bottom: 1px solid #333; padding-bottom: 6px; }
-  .crops { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  /* Sloupec široký jako výřez (192 px) → v mřížce vychází zhruba 1:1 a nic se
+     nenatahuje. Mřížka jde přes celou šířku stránky, ne jen přes 1100 px. */
+  .crops { display: grid; grid-template-columns: repeat(auto-fill, minmax(192px, 1fr)); gap: 14px; }
   .crop { background: var(--panel); border: 1px solid #333; border-radius: 8px; padding: 8px; }
   .crop canvas {
     width: 100%; height: auto; display: block; border-radius: 4px;
@@ -67,14 +73,23 @@
   <div class="overview" id="overview"><div class="loading">Načítám…</div></div>
 
   <h2>Detailní výřezy borháků (B)</h2>
-  <div class="crops" id="crops"></div>
+  <div class="crops fullbleed" id="crops"></div>
 </main>
 
 <footer>Bolt Viewer · červený čtvereček = ±20 px od pozice borháku</footer>
 
 <script>
-const HALF = 20;          // ±20 px od pozice boltu (v původním rozlišení)
-const CROP_DISPLAY = 200; // cílová zobrazená velikost výřezu (px), responzivně max 100 %
+// Značka na přehledovém obrázku: ±20 px kolem boltu v původním rozlišení.
+// Řídí jen velikost červeného obdélníčku v SVG, ne výřez.
+const MARK_HALF = 20;
+
+// Výřez pod přehledovkou. Dřív bral stejných ±20 px jako značka, takže 40×40
+// zdrojových pixelů se natahovalo na ~185 px v mřížce — pětinásobné zvětšení,
+// odtud ta rozpixelovanost. Teď se bere ±96 px, tedy 192×192 skutečných
+// pixelů, a kreslí se do plátna stejné velikosti: v mřížce to vychází
+// přibližně 1:1, takže se nic neinterpoluje.
+const CROP_HALF = 96;
+const CROP_DISPLAY = CROP_HALF * 2;
 
 let data = [];
 let cur = 0;
@@ -166,10 +181,10 @@ function buildView(img, item, overview, crops) {
   svg.setAttribute('preserveAspectRatio', 'none');
   for (const [fx, fy] of item.bolts) {
     const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    r.setAttribute('x', fx * W - HALF);
-    r.setAttribute('y', fy * H - HALF);
-    r.setAttribute('width', HALF * 2);
-    r.setAttribute('height', HALF * 2);
+    r.setAttribute('x', fx * W - MARK_HALF);
+    r.setAttribute('y', fy * H - MARK_HALF);
+    r.setAttribute('width', MARK_HALF * 2);
+    r.setAttribute('height', MARK_HALF * 2);
     if (isHl(item, fx, fy)) r.classList.add('hl');
     svg.appendChild(r);
   }
@@ -179,8 +194,8 @@ function buildView(img, item, overview, crops) {
   let hlWrap = null;
   item.bolts.forEach(([fx, fy], i) => {
     const cx = fx * W, cy = fy * H;
-    const sx = Math.max(0, Math.min(cx - HALF, W - HALF * 2));
-    const sy = Math.max(0, Math.min(cy - HALF, H - HALF * 2));
+    const sx = Math.max(0, Math.min(cx - CROP_HALF, W - CROP_HALF * 2));
+    const sy = Math.max(0, Math.min(cy - CROP_HALF, H - CROP_HALF * 2));
 
     const wrap = document.createElement('div');
     wrap.className = 'crop';
@@ -190,12 +205,24 @@ function buildView(img, item, overview, crops) {
     cv.height = CROP_DISPLAY;
     const ctx = cv.getContext('2d');
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(img, sx, sy, HALF * 2, HALF * 2, 0, 0, CROP_DISPLAY, CROP_DISPLAY);
+    ctx.drawImage(img, sx, sy, CROP_HALF * 2, CROP_HALF * 2,
+                  0, 0, CROP_DISPLAY, CROP_DISPLAY);
 
-    // červený rámeček do výřezu
+    // Značka na samotném boltu. S ±96 px okolí je bolt jen malý bod uprostřed,
+    // takže bez ní není poznat, který útvar se vlastně posuzuje. Kreslí se na
+    // skutečnou pozici boltu ve výřezu — u okraje fotky je výřez oříznutý, a
+    // bolt pak není přesně ve středu plátna.
+    const SCALE = CROP_DISPLAY / (CROP_HALF * 2);   // = 1, drženo explicitně
+    const mx = (cx - sx) * SCALE, my = (cy - sy) * SCALE;
+    const mh = MARK_HALF * SCALE;
     ctx.strokeStyle = '#ff2222';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(1.5, 1.5, CROP_DISPLAY - 3, CROP_DISPLAY - 3);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(mx - mh, my - mh, mh * 2, mh * 2);
+
+    // decentní rámeček kolem celého výřezu
+    ctx.strokeStyle = 'rgba(255,34,34,.45)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, CROP_DISPLAY - 2, CROP_DISPLAY - 2);
 
     const lbl = document.createElement('div');
     lbl.className = 'lbl';
