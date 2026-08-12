@@ -1292,12 +1292,12 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   /* odznaky NAD táhnutelnou kružnicí (z-index 4), ať klik nezačne drag */
   .cell.t-bolt .badge {{ pointer-events:auto; cursor:default; z-index:6; }}
   @media (hover:hover) {{ .cell.t-bolt .badge:hover {{ opacity:1 !important; transform:scale(1.12); }} }}
-  /* hover-dwell: podržení 500 ms nad zeleným odznakem = klik (yes→nevíme) */
+  /* ZAKOMENTOVÁNO spolu s hover-dwell v JS — třída .dwelling se už nenasazuje.
   .badge-yes.dwelling {{ animation:dwellpulse .2s linear forwards; }}
   @keyframes dwellpulse {{
     from {{ box-shadow:0 0 0 0 rgba(34,165,46,.85); }}
     to   {{ box-shadow:0 0 0 10px rgba(34,165,46,0); }}
-  }}
+  }} */
   .cell.busy {{ opacity:.4; }}
   /* skryté filtrem show= (zůstává v DOM → pevné stránkování) */
   .cell.filtered-out {{ display:none; }}
@@ -1476,21 +1476,22 @@ document.querySelectorAll('.cell').forEach(cell => {{
   byes.addEventListener('click', () => mark(cell, 'bolt'));
   bno.addEventListener('click', () => mark(cell, 'no-bolt'));
 
-  // hover-dwell na zeleném odznaku = klik – JEN na desktopu (hover zařízení).
-  // Na dotyku se NEpřipojuje vůbec, aby tap fungoval na první dotek (žádný
-  // sticky-hover / dvojklik).
-  if (canHover) {{
-    let dwell = null;
-    byes.addEventListener('pointerenter', (e) => {{
-      if (e.pointerType && e.pointerType !== 'mouse') return;
-      if (!cell.classList.contains('t-bolt')) return;
-      byes.classList.add('dwelling');
-      dwell = setTimeout(() => {{ byes.classList.remove('dwelling'); mark(cell, 'bolt'); }}, 200);
-    }});
-    const cancelDwell = () => {{ clearTimeout(dwell); dwell = null; byes.classList.remove('dwelling'); }};
-    byes.addEventListener('pointerleave', cancelDwell);
-    byes.addEventListener('pointerdown', cancelDwell);
-  }}
+  // ZAKOMENTOVÁNO: hover-dwell na zeleném odznaku = klik. Podržení myši 200 ms
+  // nad zeleným ✓ odznačilo bolt bez kliknutí, což se pletlo při běžném
+  // přejíždění myší přes mřížku. Odznačuje se teď výhradně kliknutím
+  // (byes.addEventListener('click', …) výše).
+  // if (canHover) {{
+  //   let dwell = null;
+  //   byes.addEventListener('pointerenter', (e) => {{
+  //     if (e.pointerType && e.pointerType !== 'mouse') return;
+  //     if (!cell.classList.contains('t-bolt')) return;
+  //     byes.classList.add('dwelling');
+  //     dwell = setTimeout(() => {{ byes.classList.remove('dwelling'); mark(cell, 'bolt'); }}, 200);
+  //   }});
+  //   const cancelDwell = () => {{ clearTimeout(dwell); dwell = null; byes.classList.remove('dwelling'); }};
+  //   byes.addEventListener('pointerleave', cancelDwell);
+  //   byes.addEventListener('pointerdown', cancelDwell);
+  // }}
 
   // drag & drop zelené kružnice (jen myš / desktop; mobil používá slidery)
   const ovl = cell.querySelector('.ovl');
