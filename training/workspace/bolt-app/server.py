@@ -1330,14 +1330,12 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   /* potvrzený bolt: kružnice táhnutelná myší, zóny vypnuté, odznaky klikací */
   .cell.t-bolt .ovl {{ pointer-events:auto; cursor:default; z-index:4; }}
   .cell.t-bolt .ovl.dragging {{ cursor:default; }}
-  /* Dotykové ovládání kolečka u potvrzeného boltu.
-     pan-y na obrázku: svislé scrollování stránky jedním prstem zůstává
-     browseru, ale pinch (dva prsty) už si browser nebere jako zoom, takže
-     oba pointery dostaneme my a můžeme jimi měnit poloměr.
-     .grab je neviditelný terč přilepený na kolečko, s touch-action:none —
-     jen na něm tažení jedním prstem posouvá střed, takže scroll přes zbytek
-     náhledu funguje dál. */
-  .cell.t-bolt .imgwrap {{ touch-action:pan-y; }}
+  /* Dotykové ovládání kolečka u potvrzeného boltu: prst kdekoliv nad náhledem
+     táhne kolečko, dva prsty mění poloměr. Proto touch-action:none — browser
+     si nesmí vzít ani svislý pan, ani pinch-zoom. Scrollovat stránku jde přes
+     popisky, slidery a mezery mezi buňkami; u nepotvrzených výřezů se náhled
+     chová beze změny. */
+  .cell.t-bolt .imgwrap {{ touch-action:none; }}
   .grab {{ position:absolute; display:none; transform:translate(-50%,-50%);
     border-radius:50%; touch-action:none; z-index:5; }}
   .cell.t-bolt .grab {{ display:block; }}
@@ -1598,13 +1596,17 @@ document.querySelectorAll('.cell').forEach(cell => {{
   ovl.addEventListener('pointercancel', endDrag);
 
   // ── dotyk: tažení kolečka prstem, dva prsty = jeho velikost ───────────────
-  // Tažení jede jen z terče .grab (touch-action:none), takže scrollování přes
-  // zbytek náhledu zůstává browseru. Pinch se chytá na celé buňce, aby ho
-  // nerozhodilo, na kterém prvku zrovna druhý prst přistál.
+  // Tažení začíná kdekoliv nad náhledem a je RELATIVNÍ: kolečko se posune o
+  // stejné dx/dy jako prst, takže si prst nemusí stoupnout přesně na něj a
+  // nezakrývá ho. Krátký tap bez posunu dál znamená „dej střed sem".
+  // Pinch se chytá na celé buňce, aby nezáleželo, na kterém prvku přistál
+  // druhý prst.
   const grab = cell.querySelector('.grab');
+  const wrapEl = cell.querySelector('.imgwrap');
   const pts = new Map();          // aktivní dotyky: pointerId -> {{x, y}}
   let pinch = null;               // {{d0, r0}} = rozestup a poloměr na začátku
-  let gdrag = false;
+  let tdrag = null;               // {{x0, y0, dx0, dy0, moved}} běžící tažení
+  const TAP_PX = 10;              // pod tolik px se gesto počítá jako tap
   drawCircle(cell);               // nasaď terč na kolečko už při načtení
 
   const setR = (v) => {{
@@ -1620,15 +1622,17 @@ document.querySelectorAll('.cell').forEach(cell => {{
   cell.addEventListener('pointerdown', (e) => {{
     if (e.pointerType === 'mouse') return;
     if (!cell.classList.contains('t-bolt')) return;
+    if (!wrapEl.contains(e.target)) return;   // popisky a slidery nechat být
     pts.set(e.pointerId, {{x: e.clientX, y: e.clientY}});
     if (pts.size === 2) {{                    // pinch přebíjí rozdělané tažení
-      gdrag = false;
+      tdrag = null;
       grab.classList.remove('gactive');
       pinch = {{d0: twoDist() || 1, r0: sliders(cell).r}};
-    }} else if (e.target === grab) {{
-      gdrag = true;
+    }} else if (pts.size === 1) {{
+      const s = sliders(cell);
+      tdrag = {{x0: e.clientX, y0: e.clientY, dx0: s.dx, dy0: s.dy, moved: 0}};
       grab.classList.add('gactive');
-      grab.setPointerCapture(e.pointerId);
+      wrapEl.setPointerCapture(e.pointerId);
     }}
   }});
 
@@ -1639,8 +1643,18 @@ document.querySelectorAll('.cell').forEach(cell => {{
       setR(pinch.r0 * (twoDist() / pinch.d0));
       drawCircle(cell);
       saveGeom(cell, false);
-    }} else if (gdrag) {{
-      placeFromEvent(cell, e);
+    }} else if (tdrag) {{
+      const rect = wrapEl.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      // px displeje → původní px fotky (náhled je OUTV jednotek = OUTV/SC orig px)
+      const sdx = e.clientX - tdrag.x0, sdy = e.clientY - tdrag.y0;
+      tdrag.moved = Math.max(tdrag.moved, Math.hypot(sdx, sdy));
+      const clamp = v => Math.max(-CLAMPV, Math.min(CLAMPV, v));
+      cell.querySelector('.s-x').value =
+        clamp(tdrag.dx0 + sdx * OUTV / rect.width / SC).toFixed(2);
+      cell.querySelector('.s-y').value =
+        clamp(tdrag.dy0 + sdy * OUTV / rect.height / SC).toFixed(2);
+      drawCircle(cell);
       saveGeom(cell, false);
     }}
   }});
@@ -1648,34 +1662,37 @@ document.querySelectorAll('.cell').forEach(cell => {{
   const endTouch = (e) => {{
     if (e.pointerType === 'mouse' || !pts.delete(e.pointerId)) return;
     if (pinch && pts.size < 2) {{ pinch = null; saveGeom(cell, true); }}
-    if (gdrag && pts.size === 0) {{
-      gdrag = false;
+    if (tdrag && pts.size === 0) {{
+      const wasTap = tdrag.moved < TAP_PX;
+      tdrag = null;
       grab.classList.remove('gactive');
+      if (wasTap) placeFromEvent(cell, e);   // tap = umísti střed na dotyk
       saveGeom(cell, true);
     }}
   }};
   cell.addEventListener('pointerup', endTouch);
   cell.addEventListener('pointercancel', endTouch);
 
-  // mobil: tap do obrázku nastaví střed (jen u potvrzeného boltu).
-  // Scroll se nepřeruší – když prst ujede, tap se ignoruje.
-  if (!canHover) {{
-    let tStart = null;
-    ovl.addEventListener('pointerdown', (e) => {{
-      if (e.pointerType === 'mouse') return;
-      if (!cell.classList.contains('t-bolt')) return;
-      tStart = {{ x: e.clientX, y: e.clientY }};
-    }});
-    ovl.addEventListener('pointerup', (e) => {{
-      if (e.pointerType === 'mouse' || !tStart) return;
-      const moved = Math.hypot(e.clientX - tStart.x, e.clientY - tStart.y);
-      tStart = null;
-      if (moved < 12 && cell.classList.contains('t-bolt')) {{
-        placeFromEvent(cell, e);     // nastav střed na místo tapnutí
-        saveGeom(cell, true);
-      }}
-    }});
-  }}
+  // ZAKOMENTOVÁNO: tapnutí řeší endTouch výše (větev wasTap), tenhle blok by
+  // se s ním jen překrýval — navíc pointer capture na .imgwrap mu události
+  // stejně odebere.
+  // if (!canHover) {{
+  //   let tStart = null;
+  //   ovl.addEventListener('pointerdown', (e) => {{
+  //     if (e.pointerType === 'mouse') return;
+  //     if (!cell.classList.contains('t-bolt')) return;
+  //     tStart = {{ x: e.clientX, y: e.clientY }};
+  //   }});
+  //   ovl.addEventListener('pointerup', (e) => {{
+  //     if (e.pointerType === 'mouse' || !tStart) return;
+  //     const moved = Math.hypot(e.clientX - tStart.x, e.clientY - tStart.y);
+  //     tStart = null;
+  //     if (moved < 12 && cell.classList.contains('t-bolt')) {{
+  //       placeFromEvent(cell, e);     // nastav střed na místo tapnutí
+  //       saveGeom(cell, true);
+  //     }}
+  //   }});
+  // }}
 }});
 
 // ZAKOMENTOVÁNO s tlačítkem #regenbtn v hlavičce. Blok se na load ptal
