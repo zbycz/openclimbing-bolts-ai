@@ -1205,7 +1205,10 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   header {{ position:static; background:var(--panel);
     border-bottom:1px solid #333; padding:10px 14px; display:flex; gap:12px;
     align-items:center; flex-wrap:wrap; }}
-  header h1 {{ font-size:15px; margin:0; flex:1 1 auto; }}
+  /* nadpis se už neroztahuje, aby filtry navazovaly hned za ním a nebyly
+     odtlačené k pravému okraji */
+  header h1 {{ font-size:15px; margin:0; flex:0 0 auto; margin-right:6px; }}
+  header .hgap {{ display:inline-block; width:34px; }}
   header a.home {{ color:#7bf; text-decoration:none; font-size:14px; }}
   #status {{ font-size:13px; color:#aaa; }}
   .pager {{ display:flex; gap:12px; align-items:center; justify-content:center;
@@ -1325,7 +1328,17 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   .stats .schema i {{ color:#8a8; font-style:normal; }}
 </style></head><body>
 <header>
-  <h1>Výřezy borháků – ◧ vlevo potvrdit bolt · ◨ vpravo no-bolt</h1>
+  <h1>Výřezy borháků</h1>
+  <a class="btn" style="background:{('#2a2a4a' if show=='undecided' else '#2a2a2a')}" href="/crops?show=undecided{sqs}">? Nevíme</a>
+  <a class="btn" style="background:{('#3a1a1a' if show=='no-bolt' else '#2a2a2a')}" href="/crops?show=no-bolt{sqs}">✗ No-bolt</a>
+  <a class="btn" style="background:{('#1a3a1a' if show=='bolt' else '#2a2a2a')}" href="/crops?show=bolt{sqs}">✓ Potvrzené bolty</a>
+  <a class="btn" style="background:{('#333' if not show else '#2a2a2a')}" href="/crops{(f'?size={size}' if size in ('big','huge') else '')}">⬚ Vše</a>
+  <span class="hgap"></span>
+  <button class="btn" id="sizebtn" title="Přepnout velikost náhledu">{'⊟ Normální náhled' if size == 'huge' else ('⊞ 4× větší náhled' if size == 'big' else '⊞ 2× větší náhled')}</button>
+  <!-- ZAKOMENTOVÁNO: zbytek hlavičky. Zůstal jen nadpis, čtyři filtry a
+       přepínač velikosti náhledu. JS, který na tyhle prvky sahal (onecol-btn,
+       regenbtn), je zakomentovaný stejně, jinak by padal na null.
+
   <form method="get" action="/crops" style="display:flex;gap:6px;align-items:center">
     <label style="font-size:13px;color:#aaa;white-space:nowrap">Nenalezené z:</label>
     <select name="filter" onchange="window.location='/crops?filter='+encodeURIComponent(this.value)+'{sqs}'" style="background:#2a2a2a;color:#eee;border:1px solid #555;padding:5px 8px;border-radius:6px;font-size:13px;max-width:260px">
@@ -1335,20 +1348,18 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   </form>
   <button class="btn" id="markallbtn" title="Označit všechny zobrazené cropy jako no-bolt" onclick="(async()=>{{const cells=[...document.querySelectorAll('.cell:not(.t-nobolt)')];if(!cells.length){{alert('Všechny cropy na stránce jsou už no-bolt.');return;}}if(!confirm('Označit '+cells.length+' cropů jako no-bolt?'))return;const batch=cells.map(c=>JSON.parse(c.dataset.meta));this.disabled=true;try{{const res=await fetch('/api/mark',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(batch)}});await res.json();cells.forEach(c=>{{c.classList.remove('t-undecided','t-bolt');c.classList.add('t-nobolt');}});}}catch(e){{console.log('Chyba: '+e);}}finally{{this.disabled=false;}}}})()">✕ Označit vše jako no-bolt</button>
   <button class="btn mobile-only" id="onecol-btn">⬍ 1 sloupec</button>
-  <button class="btn" id="sizebtn" title="Přepnout velikost náhledu">{'⊟ Normální náhled' if size == 'huge' else ('⊞ 4× větší náhled' if size == 'big' else '⊞ 2× větší náhled')}</button>
   <button class="btn" id="regenbtn">↻ Purge &amp; recreate crops cache</button>
   <a class="btn" href="/debug">🔍 YOLO debug</a>
   <a class="btn" href="/test-dataset">🧪 Test dataset</a>
-  <a class="btn" style="background:{('#2a2a4a' if show=='undecided' else '#2a2a2a')}" href="/crops?show=undecided{sqs}">? Nevíme</a>
-  <a class="btn" style="background:{('#3a1a1a' if show=='no-bolt' else '#2a2a2a')}" href="/crops?show=no-bolt{sqs}">✗ No-bolt</a>
-  <a class="btn" style="background:{('#1a3a1a' if show=='bolt' else '#2a2a2a')}" href="/crops?show=bolt{sqs}">✓ Potvrzené bolty</a>
-  <a class="btn" style="background:{('#333' if not show else '#2a2a2a')}" href="/crops{(f'?size={size}' if size in ('big','huge') else '')}">⬚ Vše</a>
   <a class="home" href="/view">← přehledový prohlížeč</a>
+  -->
 </header>
+<!-- ZAKOMENTOVÁNO spolu s regenbtn: ukazatel průběhu regenerace keše.
 <div id="regen" class="hidden">
   <div id="regenbar"><div id="regenfill"></div></div>
   <span id="regentext">—</span>
 </div>
+-->
 {pager()}
 <div class="grid">{''.join(cells)}</div>
 {pager()}
@@ -1370,19 +1381,20 @@ const OUTH = OUTV / 2;      // střed viewBoxu
 const CLAMPV = {clampv};    // max posun středu od klik. bodu (orig px)
 const canHover = window.matchMedia('(hover: hover)').matches;  // desktop vs dotyk
 
+// ZAKOMENTOVÁNO s tlačítkem #onecol-btn v hlavičce.
 // ── mobil: přepínač 1 sloupec / mřížka (uloženo v localStorage) ──────────────
-const grid = document.querySelector('.grid');
-const onecolBtn = document.getElementById('onecol-btn');
-function applyOnecol(on) {{
-  grid.classList.toggle('onecol', on);
-  onecolBtn.textContent = on ? '▦ Mřížka' : '⬍ 1 sloupec';
-}}
-applyOnecol(localStorage.getItem('crops_onecol') === '1');
-onecolBtn.addEventListener('click', () => {{
-  const on = !grid.classList.contains('onecol');
-  localStorage.setItem('crops_onecol', on ? '1' : '0');
-  applyOnecol(on);
-}});
+// const grid = document.querySelector('.grid');
+// const onecolBtn = document.getElementById('onecol-btn');
+// function applyOnecol(on) {{
+//   grid.classList.toggle('onecol', on);
+//   onecolBtn.textContent = on ? '▦ Mřížka' : '⬍ 1 sloupec';
+// }}
+// applyOnecol(localStorage.getItem('crops_onecol') === '1');
+// onecolBtn.addEventListener('click', () => {{
+//   const on = !grid.classList.contains('onecol');
+//   localStorage.setItem('crops_onecol', on ? '1' : '0');
+//   applyOnecol(on);
+// }});
 
 // ── přepínač velikosti náhledu (normal → big → huge → normal) ────────────────
 const sizeBtn = document.getElementById('sizebtn');
@@ -1540,71 +1552,74 @@ document.querySelectorAll('.cell').forEach(cell => {{
   }}
 }});
 
-// ---- purge & recreate crops cache ----
-const regenBox  = document.getElementById('regen');
-const regenFill = document.getElementById('regenfill');
-const regenText = document.getElementById('regentext');
-const regenBtn  = document.getElementById('regenbtn');
-let regenTimer = null;
-
-function fmtDur(s) {{
-  if (s == null) return '?';
-  s = Math.round(s);
-  const m = Math.floor(s / 60), sec = s % 60;
-  return m > 0 ? `${{m}}m ${{sec}}s` : `${{sec}}s`;
-}}
-
-function renderProgress(p) {{
-  regenBox.classList.remove('hidden');
-  regenFill.style.width = (p.pct || 0).toFixed(1) + '%';
-  if (p.running) {{
-    const rate = p.rate ? p.rate.toFixed(1) : '?';
-    regenText.textContent =
-      `${{p.done}}/${{p.total}} (${{(p.pct||0).toFixed(1)}} %) · `
-      + `${{rate}} img/s · ETA ${{fmtDur(p.eta)}}`
-      + (p.errors ? ` · ${{p.errors}} chyb` : '');
-    regenBtn.disabled = true;
-  }} else {{
-    const tail = p.error ? `CHYBA: ${{p.error}}`
-      : `hotovo: ${{p.done}}/${{p.total}}` + (p.errors ? ` (${{p.errors}} chyb)` : '');
-    regenText.textContent = tail;
-    regenBtn.disabled = false;
-    if (regenTimer) {{ clearInterval(regenTimer); regenTimer = null; }}
-  }}
-}}
-
-async function pollProgress() {{
-  try {{
-    const r = await fetch('/api/cache-progress');
-    renderProgress(await r.json());
-  }} catch (e) {{ /* ignoruj jednorázový výpadek */ }}
-}}
-
-regenBtn.addEventListener('click', async () => {{
-  if (!confirm('Smazat celou keš výřezů a vygenerovat znovu? '
-      + 'Běží sekvenčně (max 2 paralelně), může to chvíli trvat.')) return;
-  regenBtn.disabled = true;
-  try {{
-    const r = await fetch('/api/purge-cache', {{ method: 'POST' }});
-    const j = await r.json();
-    if (!j.started && r.status === 409) {{
-      alert('Regenerace už běží.');
-    }}
-    renderProgress(j);
-    if (!regenTimer) regenTimer = setInterval(pollProgress, 1000);
-  }} catch (e) {{
-    alert('Chyba při spuštění: ' + e);
-    regenBtn.disabled = false;
-  }}
-}});
-
-// při načtení stránky zjisti, jestli něco neběží (a navaž polling)
-pollProgress().then(() => {{
-  fetch('/api/cache-progress').then(r => r.json()).then(p => {{
-    if (p.running && !regenTimer) regenTimer = setInterval(pollProgress, 1000);
-    else if (!p.running && (p.done === 0 && p.total === 0)) regenBox.classList.add('hidden');
-  }});
-}});
+// ZAKOMENTOVÁNO s tlačítkem #regenbtn v hlavičce. Blok se na load ptal
+// serveru na průběh regenerace a sahal na regenBtn/regenBox, které už
+// v DOM nejsou — nechat ho aktivní by shodilo zbytek skriptu.
+// // ---- purge & recreate crops cache ----
+// const regenBox  = document.getElementById('regen');
+// const regenFill = document.getElementById('regenfill');
+// const regenText = document.getElementById('regentext');
+// const regenBtn  = document.getElementById('regenbtn');
+// let regenTimer = null;
+//
+// function fmtDur(s) {{
+//   if (s == null) return '?';
+//   s = Math.round(s);
+//   const m = Math.floor(s / 60), sec = s % 60;
+//   return m > 0 ? `${{m}}m ${{sec}}s` : `${{sec}}s`;
+// }}
+//
+// function renderProgress(p) {{
+//   regenBox.classList.remove('hidden');
+//   regenFill.style.width = (p.pct || 0).toFixed(1) + '%';
+//   if (p.running) {{
+//     const rate = p.rate ? p.rate.toFixed(1) : '?';
+//     regenText.textContent =
+//       `${{p.done}}/${{p.total}} (${{(p.pct||0).toFixed(1)}} %) · `
+//       + `${{rate}} img/s · ETA ${{fmtDur(p.eta)}}`
+//       + (p.errors ? ` · ${{p.errors}} chyb` : '');
+//     regenBtn.disabled = true;
+//   }} else {{
+//     const tail = p.error ? `CHYBA: ${{p.error}}`
+//       : `hotovo: ${{p.done}}/${{p.total}}` + (p.errors ? ` (${{p.errors}} chyb)` : '');
+//     regenText.textContent = tail;
+//     regenBtn.disabled = false;
+//     if (regenTimer) {{ clearInterval(regenTimer); regenTimer = null; }}
+//   }}
+// }}
+//
+// async function pollProgress() {{
+//   try {{
+//     const r = await fetch('/api/cache-progress');
+//     renderProgress(await r.json());
+//   }} catch (e) {{ /* ignoruj jednorázový výpadek */ }}
+// }}
+//
+// regenBtn.addEventListener('click', async () => {{
+//   if (!confirm('Smazat celou keš výřezů a vygenerovat znovu? '
+//       + 'Běží sekvenčně (max 2 paralelně), může to chvíli trvat.')) return;
+//   regenBtn.disabled = true;
+//   try {{
+//     const r = await fetch('/api/purge-cache', {{ method: 'POST' }});
+//     const j = await r.json();
+//     if (!j.started && r.status === 409) {{
+//       alert('Regenerace už běží.');
+//     }}
+//     renderProgress(j);
+//     if (!regenTimer) regenTimer = setInterval(pollProgress, 1000);
+//   }} catch (e) {{
+//     alert('Chyba při spuštění: ' + e);
+//     regenBtn.disabled = false;
+//   }}
+// }});
+//
+// // při načtení stránky zjisti, jestli něco neběží (a navaž polling)
+// pollProgress().then(() => {{
+//   fetch('/api/cache-progress').then(r => r.json()).then(p => {{
+//     if (p.running && !regenTimer) regenTimer = setInterval(pollProgress, 1000);
+//     else if (!p.running && (p.done === 0 && p.total === 0)) regenBox.classList.add('hidden');
+//   }});
+// }});
 }}); // DOMContentLoaded
 </script>
 </body></html>"""
