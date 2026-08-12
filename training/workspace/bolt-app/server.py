@@ -113,6 +113,44 @@ TOTAL = len(BOLTS)            # unikátních boltů
 PAGES = max(1, math.ceil(TOTAL / PER_PAGE))
 _BOLT_GLOBAL_IDX = {(b["image"], b["pos"]): i for i, b in enumerate(BOLTS)}
 
+
+def _build_view_data():
+    """data.json for the overview browser (/view), built from crop_labels.
+
+    The old pipeline shipped a static data.json written by gen_data.py. Since
+    the server started reading crop_labels directly, nobody regenerates that
+    dump, so /view was fetching a file that does not exist — the fetch 404s,
+    r.json() throws on the "not found" body, and boot() dies before rendering
+    anything. Generating it on demand keeps /view working off the same data
+    the labeling grid uses.
+
+    Photos that were never downloaded are skipped; the viewer could only show
+    a broken image for them.
+    """
+    by_file: dict[str, dict] = {}
+    for b in BOLTS:
+        entry = by_file.get(b["file"])
+        if entry is None:
+            entry = by_file[b["file"]] = {"file": b["file"],
+                                          "image": b["image"], "bolts": []}
+        pt = [b["x"], b["y"]]
+        if pt not in entry["bolts"]:
+            entry["bolts"].append(pt)
+    return [by_file[f] for f in sorted(by_file)
+            if os.path.isfile(os.path.join(IMG_DIR, f))]
+
+
+def _build_view_crops():
+    """crops.json companion for /view.
+
+    Maps a bolt's (file, x, y) to its DB position string, which is how a
+    ?pos=... link highlights one specific bolt rather than every bolt that
+    happens to sit at the same rounded coordinates.
+    """
+    return [{"file": b["file"], "x": b["x"], "y": b["y"],
+             "order": b["sources"][0].get("order", 0), "pos": b["pos"]}
+            for b in BOLTS]
+
 TEST_DATASET: list = []
 if os.path.isfile(TEST_DATASET_FILE):
     with open(TEST_DATASET_FILE, encoding="utf-8") as f:
@@ -1335,9 +1373,11 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   <a class="btn" style="background:{('#333' if not show else '#2a2a2a')}" href="/crops{(f'?size={size}' if size in ('big','huge') else '')}">⬚ Vše</a>
   <span class="hgap"></span>
   <button class="btn" id="sizebtn" title="Přepnout velikost náhledu">{'⊟ Normální náhled' if size == 'huge' else ('⊞ 4× větší náhled' if size == 'big' else '⊞ 2× větší náhled')}</button>
-  <!-- ZAKOMENTOVÁNO: zbytek hlavičky. Zůstal jen nadpis, čtyři filtry a
-       přepínač velikosti náhledu. JS, který na tyhle prvky sahal (onecol-btn,
-       regenbtn), je zakomentovaný stejně, jinak by padal na null.
+  <button class="btn mobile-only" id="onecol-btn">⬍ 1 sloupec</button>
+  <!-- ZAKOMENTOVÁNO: zbytek hlavičky. Zůstal jen nadpis, čtyři filtry,
+       přepínač velikosti náhledu a (jen na mobilu) přepínač jednoho sloupce.
+       JS, který sahal na regenbtn, je zakomentovaný stejně, jinak by padal
+       na null.
 
   <form method="get" action="/crops" style="display:flex;gap:6px;align-items:center">
     <label style="font-size:13px;color:#aaa;white-space:nowrap">Nenalezené z:</label>
@@ -1347,7 +1387,6 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
     </select>
   </form>
   <button class="btn" id="markallbtn" title="Označit všechny zobrazené cropy jako no-bolt" onclick="(async()=>{{const cells=[...document.querySelectorAll('.cell:not(.t-nobolt)')];if(!cells.length){{alert('Všechny cropy na stránce jsou už no-bolt.');return;}}if(!confirm('Označit '+cells.length+' cropů jako no-bolt?'))return;const batch=cells.map(c=>JSON.parse(c.dataset.meta));this.disabled=true;try{{const res=await fetch('/api/mark',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(batch)}});await res.json();cells.forEach(c=>{{c.classList.remove('t-undecided','t-bolt');c.classList.add('t-nobolt');}});}}catch(e){{console.log('Chyba: '+e);}}finally{{this.disabled=false;}}}})()">✕ Označit vše jako no-bolt</button>
-  <button class="btn mobile-only" id="onecol-btn">⬍ 1 sloupec</button>
   <button class="btn" id="regenbtn">↻ Purge &amp; recreate crops cache</button>
   <a class="btn" href="/debug">🔍 YOLO debug</a>
   <a class="btn" href="/test-dataset">🧪 Test dataset</a>
@@ -1381,20 +1420,19 @@ const OUTH = OUTV / 2;      // střed viewBoxu
 const CLAMPV = {clampv};    // max posun středu od klik. bodu (orig px)
 const canHover = window.matchMedia('(hover: hover)').matches;  // desktop vs dotyk
 
-// ZAKOMENTOVÁNO s tlačítkem #onecol-btn v hlavičce.
 // ── mobil: přepínač 1 sloupec / mřížka (uloženo v localStorage) ──────────────
-// const grid = document.querySelector('.grid');
-// const onecolBtn = document.getElementById('onecol-btn');
-// function applyOnecol(on) {{
-//   grid.classList.toggle('onecol', on);
-//   onecolBtn.textContent = on ? '▦ Mřížka' : '⬍ 1 sloupec';
-// }}
-// applyOnecol(localStorage.getItem('crops_onecol') === '1');
-// onecolBtn.addEventListener('click', () => {{
-//   const on = !grid.classList.contains('onecol');
-//   localStorage.setItem('crops_onecol', on ? '1' : '0');
-//   applyOnecol(on);
-// }});
+const grid = document.querySelector('.grid');
+const onecolBtn = document.getElementById('onecol-btn');
+function applyOnecol(on) {{
+  grid.classList.toggle('onecol', on);
+  onecolBtn.textContent = on ? '▦ Mřížka' : '⬍ 1 sloupec';
+}}
+applyOnecol(localStorage.getItem('crops_onecol') === '1');
+onecolBtn.addEventListener('click', () => {{
+  const on = !grid.classList.contains('onecol');
+  localStorage.setItem('crops_onecol', on ? '1' : '0');
+  applyOnecol(on);
+}});
 
 // ── přepínač velikosti náhledu (normal → big → huge → normal) ────────────────
 const sizeBtn = document.getElementById('sizebtn');
@@ -1823,6 +1861,10 @@ class Handler(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
+    def _send_json(self, obj):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self._send(200, body, "application/json; charset=utf-8")
+
     def _static(self, relpath, ctype):
         path = os.path.join(HERE, relpath)
         if not os.path.isfile(path):
@@ -1843,9 +1885,16 @@ class Handler(BaseHTTPRequestHandler):
         elif path in ("/view", "/index.html"):
             self._static("index.html", "text/html; charset=utf-8")
         elif path == "/data.json":
-            self._static("data.json", "application/json; charset=utf-8")
+            # A hand-made dump still wins, otherwise build it from the DB.
+            if os.path.isfile(os.path.join(HERE, "data.json")):
+                self._static("data.json", "application/json; charset=utf-8")
+            else:
+                self._send_json(_build_view_data())
         elif path == "/crops.json":
-            self._static("crops.json", "application/json; charset=utf-8")
+            if os.path.isfile(CROPS_JSON):
+                self._static("crops.json", "application/json; charset=utf-8")
+            else:
+                self._send_json(_build_view_crops())
         elif path == "/crops":
             try:
                 page = int(qs.get("page", ["1"])[0])
