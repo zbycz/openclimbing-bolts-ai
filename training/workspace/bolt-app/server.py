@@ -1640,6 +1640,27 @@ document.querySelectorAll('.cell').forEach(cell => {{
     return Math.hypot(a.x - b.x, a.y - b.y);
   }};
 
+  // ── desktop: pinch na trackpadu mění poloměr ──────────────────────────────
+  // Trackpadový pinch prohlížeč neposílá jako pointery, ale jako wheel
+  // s ctrlKey — stejná událost, kterou jinak zoomuje celou stránku. Bereme si
+  // ji tedy jen nad potvrzeným výřezem a jen s ctrlKey, aby obyčejné
+  // scrollování kolečkem stránkou dál patřilo prohlížeči. Ctrl+kolečko na myši
+  // dělá totéž, jen po větších krocích.
+  let wheelSave = null;
+  wrapEl.addEventListener('wheel', (e) => {{
+    if (!cell.classList.contains('t-bolt') || !e.ctrlKey) return;
+    e.preventDefault();
+    // exponenciálně: každý „klik" mění poloměr o stejný poměr, ne o pevné px,
+    // takže se malá kolečka ladí stejně pohodlně jako velká
+    // 0.0025: jedno cvaknutí myši (deltaY 100) je ~1.28x, trackpadový pinch
+    // chodí po malých deltách a jede plynule. Víc by přeskakovalo přes celý
+    // rozsah slideru jedním pohybem.
+    setR(sliders(cell).r * Math.exp(-e.deltaY * 0.0025));
+    drawCircle(cell);
+    clearTimeout(wheelSave);
+    wheelSave = setTimeout(() => saveGeom(cell, true), 300);
+  }}, {{passive: false}});
+
   cell.addEventListener('pointerdown', (e) => {{
     if (e.pointerType === 'mouse') return;
     if (!cell.classList.contains('t-bolt')) return;
