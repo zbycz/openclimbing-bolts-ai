@@ -1346,11 +1346,22 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
   .badge {{ position:absolute; top:6px; width:30px; height:30px;
     border-radius:50%; color:#fff; display:none; z-index:3;
     align-items:center; justify-content:center; font-weight:700; font-size:18px;
-    box-shadow:0 1px 4px rgba(0,0,0,.6); pointer-events:none; }}
+    box-shadow:0 1px 4px rgba(0,0,0,.6); pointer-events:none;
+    transition:opacity .1s, transform .1s; }}
   .badge-no {{ right:6px; background:var(--red); }}
   .badge-yes {{ left:6px; background:#22a52e; }}
   /* hover: napověz obě ikonky poloprůhledně – JEN na zařízeních s hover (desktop) */
   @media (hover:hover) {{ .imgwrap:hover .badge {{ display:flex; opacity:.45; }} }}
+  /* Nad kterou polovinou myš je, ten odznak se rozsvítí a druhý zhasne — je tak
+     dopředu vidět, co klik udělá. Zóny jsou v DOM před odznaky, takže stačí
+     obecný sourozenecký selektor. U potvrzeného boltu jsou zóny vypnuté
+     (klikají se přímo odznaky), tam se tedy nic nemění. */
+  @media (hover:hover) {{
+    .zone-left:hover ~ .badge-yes,
+    .zone-right:hover ~ .badge-no {{ opacity:1; transform:scale(1.15); }}
+    .zone-left:hover ~ .badge-no,
+    .zone-right:hover ~ .badge-yes {{ opacity:.15; }}
+  }}
   .cap {{ display:flex; flex-direction:column; font-size:11px; color:#bbb;
     margin-top:6px; line-height:1.35; word-break:break-word; text-decoration:none; }}
   .cap span {{ color:#000; }}
