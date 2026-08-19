@@ -18,7 +18,7 @@ PAGES = [
 
 # Prvky, které na mřížce musí existovat — jinak se skript zastavil dřív, než
 # je stihl navěsit, nebo je někdo omylem odstranil z hlavičky.
-REQUIRED = ["#sizebtn", "#onecol-btn", ".cell", ".badge-yes", ".badge-no"]
+REQUIRED = ["#setbtn", "#settings", "#viewmodal", ".cell", ".badge-yes", ".badge-no"]
 
 
 def main():

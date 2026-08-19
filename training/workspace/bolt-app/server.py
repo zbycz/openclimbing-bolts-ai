@@ -1074,7 +1074,8 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
     if tile not in TILE_MIN:
         tile = TILE_FOR_SIZE[size]
     tilemin, tilemax = TILE_MIN[tile], TILE_MAX[tile]
-    tile_order_js = json.dumps(TILE_ORDER)
+    tile_opts = "".join(
+        f'<option value="{t}">{t} · {TILE_MIN[t]} px</option>' for t in TILE_ORDER)
     halfv = HUGE_HALF if size == "huge" else (BIG_HALF if size == "big" else HALF)
     outv  = HUGE_OUT  if size == "huge" else (BIG_OUT  if size == "big" else OUT)
     clampv = halfv - 2
@@ -1363,6 +1364,21 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
     .zone-left:hover ~ .badge-no,
     .zone-right:hover ~ .badge-yes {{ opacity:.15; }}
   }}
+  /* Slidery jdou vypnout v nastavení — kdo ladí geometrii tahem a pinchem,
+     má z nich jen delší dlaždici. */
+  body.no-sliders .sliders {{ display:none !important; }}
+  #settings {{ width:min(460px, 94vw); padding:0; border:none; border-radius:10px;
+    background:var(--panel); color:var(--fg); }}
+  #settings::backdrop {{ background:rgba(0,0,0,.72); }}
+  .set-body {{ display:flex; flex-direction:column; gap:2px; padding:6px 0 10px; }}
+  .set-row {{ display:flex; align-items:center; justify-content:space-between;
+    gap:14px; padding:10px 14px; font-size:14px; cursor:pointer; }}
+  .set-row:hover {{ background:#242424; }}
+  .set-row input[type=checkbox] {{ width:20px; height:20px; accent-color:#22a52e;
+    cursor:pointer; flex:0 0 auto; }}
+  .set-row select {{ background:#2a2a2a; color:var(--fg); border:1px solid #555;
+    border-radius:6px; padding:6px 8px; font-size:14px; }}
+  .set-note {{ padding:2px 14px 8px; font-size:12px; color:#888; }}
   /* Modál s prohlížečem fotky. Klik na popisek pod výřezem otevře /view
      v iframu místo odchodu ze stránky — jinak se ztratí rozdělaná strana
      a scroll v mřížce. Ctrl/⌘+klik dál otevírá nové okno (target=_blank). */
@@ -1453,9 +1469,7 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
   <a class="btn" style="background:{('#1a3a1a' if show=='bolt' else '#2a2a2a')}" href="/crops?show=bolt{sqs}">✓ Potvrzené bolty</a>
   <a class="btn" style="background:{('#333' if not show else '#2a2a2a')}" href="/crops{aqs}">⬚ Vše</a>
   <span class="hgap"></span>
-  <button class="btn" id="sizebtn" title="Kolik okolí boltu se vyřízne">{'⊟ Normální náhled' if size == 'huge' else ('⊞ 4× větší náhled' if size == 'big' else '⊞ 2× větší náhled')}</button>
-  <button class="btn" id="tilebtn" title="Jak velké dlaždice v mřížce">⬓ Dlaždice {tile}</button>
-  <button class="btn mobile-only" id="onecol-btn">⬍ 1 sloupec</button>
+  <button class="btn" id="setbtn" title="Nastavení zobrazení">⚙ Nastavení</button>
   <!-- ZAKOMENTOVÁNO: zbytek hlavičky. Zůstal jen nadpis, čtyři filtry,
        přepínač velikosti náhledu a (jen na mobilu) přepínač jednoho sloupce.
        JS, který sahal na regenbtn, je zakomentovaný stejně, jinak by padal
@@ -1485,6 +1499,26 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
 <div class="grid">{''.join(cells)}</div>
 {pager()}
 {stats_html}
+<dialog id="settings">
+  <div class="vm-bar"><b>Nastavení zobrazení</b>
+    <button class="btn" id="set-close">✕ Zavřít</button></div>
+  <div class="set-body">
+    <label class="set-row"><span>Slidery r / x / y</span>
+      <input type="checkbox" id="set-sliders"></label>
+    <div class="set-note">Kolečko jde posouvat tažením a měnit pinchem
+      i bez nich (na desktopu Ctrl+kolečko).</div>
+    <label class="set-row"><span>Velikost náhledu</span>
+      <select id="set-size">
+        <option value="normal">normální · ±{HALF} px okolí</option>
+        <option value="big">2× větší · ±{BIG_HALF} px okolí</option>
+        <option value="huge">4× větší · ±{HUGE_HALF} px okolí</option>
+      </select></label>
+    <label class="set-row"><span>Velikost dlaždice</span>
+      <select id="set-tile">{tile_opts}</select></label>
+    <label class="set-row"><span>Jeden sloupec</span>
+      <input type="checkbox" id="set-onecol"></label>
+  </div>
+</dialog>
 <dialog id="viewmodal">
   <div class="vm-bar">
     <b id="vm-title"></b>
@@ -1507,6 +1541,10 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
     params.set('tile', savedTile); changed = true;
   }}
   if (changed) location.replace(location.pathname + '?' + params.toString());
+  // nasadit hned tady, ne až v DOMContentLoaded — jinak slidery probliknou
+  // a mřížka poskočí
+  if (localStorage.getItem('crops_sliders') === '0')
+    document.body.classList.add('no-sliders');
 }})();
 document.addEventListener('DOMContentLoaded', () => {{
 const SC = {CROP_SCALE};    // px náhledu na 1 orig px
@@ -1515,29 +1553,46 @@ const OUTH = OUTV / 2;      // střed viewBoxu
 const CLAMPV = {clampv};    // max posun středu od klik. bodu (orig px)
 const canHover = window.matchMedia('(hover: hover)').matches;  // desktop vs dotyk
 
-// ── mobil: přepínač 1 sloupec / mřížka (uloženo v localStorage) ──────────────
+// ── jeden sloupec / mřížka (volba je v nastavení, drží se v localStorage) ────
 const grid = document.querySelector('.grid');
-const onecolBtn = document.getElementById('onecol-btn');
-function applyOnecol(on) {{
-  grid.classList.toggle('onecol', on);
-  onecolBtn.textContent = on ? '▦ Mřížka' : '⬍ 1 sloupec';
-}}
+function applyOnecol(on) {{ grid.classList.toggle('onecol', on); }}
 applyOnecol(localStorage.getItem('crops_onecol') === '1');
-onecolBtn.addEventListener('click', () => {{
-  const on = !grid.classList.contains('onecol');
-  localStorage.setItem('crops_onecol', on ? '1' : '0');
-  applyOnecol(on);
-}});
 
 // ── přepínač velikosti náhledu (normal → big → huge → normal) ────────────────
-const sizeBtn = document.getElementById('sizebtn');
+// ── nastavení ─────────────────────────────────────────────────────────────
 const CUR_SIZE = '{size}';
-sizeBtn.addEventListener('click', () => {{
-  const next = CUR_SIZE === 'normal' ? 'big' : (CUR_SIZE === 'big' ? 'huge' : 'normal');
-  localStorage.setItem('crops_size', next);
+const CUR_TILE = '{tile}';
+const setDlg = document.getElementById('settings');
+document.getElementById('setbtn').addEventListener('click', () => setDlg.showModal());
+document.getElementById('set-close').addEventListener('click', () => setDlg.close());
+setDlg.addEventListener('click', (e) => {{ if (e.target === setDlg) setDlg.close(); }});
+
+// velikost náhledu a dlaždice se řežou na serveru → reload s parametrem
+const goWith = (key, value, dropWhen) => {{
+  localStorage.setItem(key === 'size' ? 'crops_size' : 'crops_tile', value);
   const params = new URLSearchParams(location.search);
-  if (next === 'normal') params.delete('size'); else params.set('size', next);
+  if (value === dropWhen) params.delete(key); else params.set(key, value);
   location.href = location.pathname + '?' + params.toString();
+}};
+const selSize = document.getElementById('set-size');
+selSize.value = CUR_SIZE;
+selSize.addEventListener('change', () => goWith('size', selSize.value, 'normal'));
+const selTile = document.getElementById('set-tile');
+selTile.value = CUR_TILE;
+selTile.addEventListener('change', () => goWith('tile', selTile.value, null));
+
+// slidery a jeden sloupec jsou čistě zobrazovací → bez reloadu
+const cbSliders = document.getElementById('set-sliders');
+cbSliders.checked = localStorage.getItem('crops_sliders') !== '0';
+cbSliders.addEventListener('change', () => {{
+  localStorage.setItem('crops_sliders', cbSliders.checked ? '1' : '0');
+  document.body.classList.toggle('no-sliders', !cbSliders.checked);
+}});
+const cbOnecol = document.getElementById('set-onecol');
+cbOnecol.checked = localStorage.getItem('crops_onecol') === '1';
+cbOnecol.addEventListener('change', () => {{
+  localStorage.setItem('crops_onecol', cbOnecol.checked ? '1' : '0');
+  applyOnecol(cbOnecol.checked);
 }});
 
 // ── modál s prohlížečem fotky ─────────────────────────────────────────────
@@ -1561,16 +1616,6 @@ document.querySelectorAll('.cell .cap').forEach(a => {{
 vm.addEventListener('close', () => {{ vmFrame.src = 'about:blank'; }});
 document.getElementById('vm-close').addEventListener('click', () => vm.close());
 vm.addEventListener('click', (e) => {{ if (e.target === vm) vm.close(); }});
-
-const TILE_ORDER = {tile_order_js};
-const CUR_TILE = '{tile}';
-document.getElementById('tilebtn').addEventListener('click', () => {{
-  const next = TILE_ORDER[(TILE_ORDER.indexOf(CUR_TILE) + 1) % TILE_ORDER.length];
-  localStorage.setItem('crops_tile', next);
-  const params = new URLSearchParams(location.search);
-  params.set('tile', next);
-  location.href = location.pathname + '?' + params.toString();
-}});
 
 function setType(cell, t) {{
   cell.classList.remove('t-undecided','t-nobolt','t-bolt');
