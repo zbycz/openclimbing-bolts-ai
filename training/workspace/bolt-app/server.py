@@ -1054,9 +1054,27 @@ BIG_OUT = OUT * 2
 HUGE_HALF = HALF * 4            # 4x víc pixelů okolí (±80 px) → 4x větší náhled
 HUGE_OUT = OUT * 4
 
+# Šířka dlaždice v mřížce. Velikost náhledu (size) říká, KOLIK pixelů okolí se
+# vyřízne; tohle říká, jak velký ten výřez na obrazovce vykreslit. Do teď to
+# byla pevná minmax(150px), takže „4x větší náhled" sice nabral víc kontextu,
+# ale zobrazil ho na 154 px — tedy zmenšený.
+TILE_MIN = {"S": 150, "M": 240, "L": 340, "XL": 460}
+# Strop šířky mřížky: u velkých dlaždic by 1300px nechávalo prázdné okraje.
+TILE_MAX = {"S": "1300px", "M": "1700px", "L": "2200px", "XL": "none"}
+TILE_ORDER = ["S", "M", "L", "XL"]
+# Když si uživatel dlaždici nevybral, odvoď ji od velikosti náhledu, ať má
+# „větší náhled" rovnou i větší dlaždici.
+TILE_FOR_SIZE = {"normal": "S", "big": "M", "huge": "L"}
 
-def render_crops(page: int, filter_results: str = "", show: str = "", size: str = "") -> bytes:
+
+def render_crops(page: int, filter_results: str = "", show: str = "",
+                 size: str = "", tile: str = "") -> bytes:
     size = "huge" if size == "huge" else ("big" if size == "big" else "normal")
+    tile = tile.upper()
+    if tile not in TILE_MIN:
+        tile = TILE_FOR_SIZE[size]
+    tilemin, tilemax = TILE_MIN[tile], TILE_MAX[tile]
+    tile_order_js = json.dumps(TILE_ORDER)
     halfv = HUGE_HALF if size == "huge" else (BIG_HALF if size == "big" else HALF)
     outv  = HUGE_OUT  if size == "huge" else (BIG_OUT  if size == "big" else OUT)
     clampv = halfv - 2
@@ -1193,7 +1211,10 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
             f"</div>"
         )
 
-    sqs = f"&size={size}" if size in ("big", "huge") else ""
+    sqs = (f"&size={size}" if size in ("big", "huge") else "")
+    sqs += f"&tile={tile}" if tile != TILE_FOR_SIZE[size] else ""
+    # totéž pro odkaz „Vše", který začíná otazníkem
+    aqs = ("?" + sqs[1:]) if sqs else ""
 
     filter_opts = "".join(
         f'<option value="{html.escape(f)}"{"  selected" if f == filter_results else ""}>'
@@ -1272,8 +1293,9 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   .jump {{ display:flex; gap:6px; }}
   .jump input {{ width:70px; background:#2a2a2a; color:var(--fg);
     border:1px solid #444; border-radius:6px; padding:6px; }}
-  .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
-    gap:12px; padding:14px; max-width:1300px; margin:0 auto; }}
+  .grid {{ display:grid;
+    grid-template-columns:repeat(auto-fill,minmax({tilemin}px,1fr));
+    gap:12px; padding:14px; max-width:{tilemax}; margin:0 auto; }}
   .mobile-only {{ display:none; }}
   @media (max-width:700px) {{
     .mobile-only {{ display:inline-block; }}
@@ -1405,9 +1427,10 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
   <a class="btn" style="background:{('#2a2a4a' if show=='undecided' else '#2a2a2a')}" href="/crops?show=undecided{sqs}">? Nevíme</a>
   <a class="btn" style="background:{('#3a1a1a' if show=='no-bolt' else '#2a2a2a')}" href="/crops?show=no-bolt{sqs}">✗ No-bolt</a>
   <a class="btn" style="background:{('#1a3a1a' if show=='bolt' else '#2a2a2a')}" href="/crops?show=bolt{sqs}">✓ Potvrzené bolty</a>
-  <a class="btn" style="background:{('#333' if not show else '#2a2a2a')}" href="/crops{(f'?size={size}' if size in ('big','huge') else '')}">⬚ Vše</a>
+  <a class="btn" style="background:{('#333' if not show else '#2a2a2a')}" href="/crops{aqs}">⬚ Vše</a>
   <span class="hgap"></span>
-  <button class="btn" id="sizebtn" title="Přepnout velikost náhledu">{'⊟ Normální náhled' if size == 'huge' else ('⊞ 4× větší náhled' if size == 'big' else '⊞ 2× větší náhled')}</button>
+  <button class="btn" id="sizebtn" title="Kolik okolí boltu se vyřízne">{'⊟ Normální náhled' if size == 'huge' else ('⊞ 4× větší náhled' if size == 'big' else '⊞ 2× větší náhled')}</button>
+  <button class="btn" id="tilebtn" title="Jak velké dlaždice v mřížce">⬓ Dlaždice {tile}</button>
   <button class="btn mobile-only" id="onecol-btn">⬍ 1 sloupec</button>
   <!-- ZAKOMENTOVÁNO: zbytek hlavičky. Zůstal jen nadpis, čtyři filtry,
        přepínač velikosti náhledu a (jen na mobilu) přepínač jednoho sloupce.
@@ -1443,10 +1466,15 @@ def render_crops(page: int, filter_results: str = "", show: str = "", size: str 
 (function() {{
   const params = new URLSearchParams(location.search);
   const saved = localStorage.getItem('crops_size');
+  const savedTile = localStorage.getItem('crops_tile');
+  let changed = false;
   if (!params.has('size') && (saved === 'big' || saved === 'huge')) {{
-    params.set('size', saved);
-    location.replace(location.pathname + '?' + params.toString());
+    params.set('size', saved); changed = true;
   }}
+  if (!params.has('tile') && savedTile) {{
+    params.set('tile', savedTile); changed = true;
+  }}
+  if (changed) location.replace(location.pathname + '?' + params.toString());
 }})();
 document.addEventListener('DOMContentLoaded', () => {{
 const SC = {CROP_SCALE};    // px náhledu na 1 orig px
@@ -1477,6 +1505,16 @@ sizeBtn.addEventListener('click', () => {{
   localStorage.setItem('crops_size', next);
   const params = new URLSearchParams(location.search);
   if (next === 'normal') params.delete('size'); else params.set('size', next);
+  location.href = location.pathname + '?' + params.toString();
+}});
+
+const TILE_ORDER = {tile_order_js};
+const CUR_TILE = '{tile}';
+document.getElementById('tilebtn').addEventListener('click', () => {{
+  const next = TILE_ORDER[(TILE_ORDER.indexOf(CUR_TILE) + 1) % TILE_ORDER.length];
+  localStorage.setItem('crops_tile', next);
+  const params = new URLSearchParams(location.search);
+  params.set('tile', next);
   location.href = location.pathname + '?' + params.toString();
 }});
 
@@ -2050,7 +2088,8 @@ class Handler(BaseHTTPRequestHandler):
             filter_results = qs.get("filter", [""])[0]
             show = qs.get("show", [""])[0]
             size = qs.get("size", [""])[0]
-            self._send(200, render_crops(page, filter_results, show, size))
+            tile = qs.get("tile", [""])[0]
+            self._send(200, render_crops(page, filter_results, show, size, tile))
         elif path == "/crops-precise-571":
             self._send(200, render_precise_page())
         elif path.startswith("/crops-precise-571/"):
