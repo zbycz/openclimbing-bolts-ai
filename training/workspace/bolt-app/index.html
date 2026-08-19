@@ -154,7 +154,11 @@ function render() {
   el('meta').textContent = `${item.image} · ${item.bolts.length} borháků`;
   el('prev').disabled = cur === 0;
   el('next').disabled = cur === data.length - 1;
-  location.hash = String(cur + 1);
+  // replaceState, ne location.hash: zápis do hashe prohlížeč bere jako skok na
+  // kotvu a odroluje stránku dolů (a v modálu to navíc posune hostitele).
+  // Adresa má zůstat sdílitelná, ale scrollovat se nikam nemá.
+  history.replaceState(null, '', location.pathname + location.search
+                                 + '#' + (cur + 1));
 
   const overview = el('overview');
   const crops = el('crops');
@@ -236,7 +240,11 @@ function buildView(img, item, overview, crops) {
   });
 
   // doroluj na zvýrazněný výřez (z odkazu z /crops)
-  if (hlWrap) setTimeout(() => hlWrap.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+  // ZRUŠENO: hlWrap.scrollIntoView() odrolovalo stránku dolů k zvýrazněnému
+  // výřezu, takže po otevření odkazu nebylo vidět přehledové foto — a v modálu
+  // to navíc odscrollovalo i hostitelskou mřížku. Zvýrazněný výřez je žlutě
+  // orámovaný, dohledá se i bez skoku.
+  // if (hlWrap) setTimeout(() => hlWrap.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
 }
 
 function go(d) {

@@ -1166,7 +1166,8 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
             f'<label>x<input type="range" class="s-x" min="-{clampv}" max="{clampv}" step="0.5" value="{dx:.2f}"></label>'
             f'<label>y<input type="range" class="s-y" min="-{clampv}" max="{clampv}" step="0.5" value="{dy:.2f}"></label>'
             f'</div>'
-            f'<a class="cap" href="{html.escape(view_url)}" '
+            f'<a class="cap" href="{html.escape(view_url)}" target="_blank" '
+            f'rel="noopener" '
             f'title="Otevřít celý obrázek se zvýrazněným borhákem">'
             f'<b>{label}</b><span>{sub}</span></a>'
             f"</figure>"
@@ -1362,6 +1363,18 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
     .zone-left:hover ~ .badge-no,
     .zone-right:hover ~ .badge-yes {{ opacity:.15; }}
   }}
+  /* Modál s prohlížečem fotky. Klik na popisek pod výřezem otevře /view
+     v iframu místo odchodu ze stránky — jinak se ztratí rozdělaná strana
+     a scroll v mřížce. Ctrl/⌘+klik dál otevírá nové okno (target=_blank). */
+  #viewmodal {{ width:96vw; max-width:96vw; height:94vh; padding:0; border:none;
+    border-radius:10px; background:var(--panel); color:var(--fg); overflow:hidden; }}
+  #viewmodal::backdrop {{ background:rgba(0,0,0,.72); }}
+  .vm-bar {{ display:flex; align-items:center; gap:10px; padding:8px 10px;
+    background:#242424; border-bottom:1px solid #333; }}
+  .vm-bar b {{ font-size:13px; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; flex:1 1 auto; }}
+  #vm-frame {{ width:100%; height:calc(94vh - 47px); border:none; display:block;
+    background:#111; }}
   .cap {{ display:flex; flex-direction:column; font-size:11px; color:#bbb;
     margin-top:6px; line-height:1.35; word-break:break-word; text-decoration:none; }}
   .cap span {{ color:#000; }}
@@ -1472,6 +1485,14 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
 <div class="grid">{''.join(cells)}</div>
 {pager()}
 {stats_html}
+<dialog id="viewmodal">
+  <div class="vm-bar">
+    <b id="vm-title"></b>
+    <a class="btn" id="vm-open" target="_blank" rel="noopener">Otevřít v okně ↗</a>
+    <button class="btn" id="vm-close">✕ Zavřít</button>
+  </div>
+  <iframe id="vm-frame" src="about:blank" title="Prohlížeč fotky"></iframe>
+</dialog>
 <script>
 // ── velikost náhledu: přesměruj podle uložené volby ──────────────────────────
 (function() {{
@@ -1518,6 +1539,28 @@ sizeBtn.addEventListener('click', () => {{
   if (next === 'normal') params.delete('size'); else params.set('size', next);
   location.href = location.pathname + '?' + params.toString();
 }});
+
+// ── modál s prohlížečem fotky ─────────────────────────────────────────────
+const vm = document.getElementById('viewmodal');
+const vmFrame = document.getElementById('vm-frame');
+const vmOpen = document.getElementById('vm-open');
+const vmTitle = document.getElementById('vm-title');
+document.querySelectorAll('.cell .cap').forEach(a => {{
+  a.addEventListener('click', (e) => {{
+    // modifikátory nechat prohlížeči, ať jde pořád otevřít nové okno/panel
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    vmOpen.href = a.href;
+    vmTitle.textContent = (a.querySelector('b') || a).textContent;
+    vmFrame.src = a.href;
+    vm.showModal();
+  }});
+}});
+// iframe zahodit až po zavření, ať se fotka nedrží v paměti a příště se
+// otevřela od začátku (Esc zavírá <dialog> sám)
+vm.addEventListener('close', () => {{ vmFrame.src = 'about:blank'; }});
+document.getElementById('vm-close').addEventListener('click', () => vm.close());
+vm.addEventListener('click', (e) => {{ if (e.target === vm) vm.close(); }});
 
 const TILE_ORDER = {tile_order_js};
 const CUR_TILE = '{tile}';
