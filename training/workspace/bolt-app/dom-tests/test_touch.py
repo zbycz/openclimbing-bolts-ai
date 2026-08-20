@@ -60,6 +60,28 @@ def main():
                 "tažení z rohu posunulo kolečko o stejné dx/dy",
                 f"čekáno {expected:.2f}, dx {got_x:.2f} dy {got_y:.2f}")
 
+        # během tažení smí být vidět jediná kružnice a nesmí být vybarvená
+        touch("touchStart", [(w["x"] + 12, w["y"] + 12)])
+        pg.wait_for_timeout(80)
+        touch("touchMove", [(w["x"] + 40, w["y"] + 40)])
+        pg.wait_for_timeout(120)
+        vis = pg.evaluate("""() => {
+          const cell = document.querySelector('.cell.t-bolt');
+          const circles = cell.querySelectorAll('.ovl circle');
+          const cs = getComputedStyle(circles[0]);
+          return {n: circles.length,
+                  fill: cs.fill,
+                  dragging: cell.querySelector('.ovl').classList.contains('dragging'),
+                  extras: cell.querySelectorAll('.grab, .gactive').length};
+        }""")
+        touch("touchEnd", [])
+        pg.wait_for_timeout(500)
+        c.check(vis["n"] == 1, "při tažení je jedna kružnice", f"{vis['n']} ks")
+        c.check(vis["extras"] == 0, "žádný druhý kruh navíc", f"{vis['extras']} prvků")
+        c.check("none" in vis["fill"] or "rgba(0, 0, 0, 0)" in vis["fill"],
+                "střed není vybarvený", vis["fill"])
+        c.check(vis["dragging"], "tažení je znát na kružnici (třída dragging)")
+
         # 2. krátký tap dole uprostřed (mimo odznaky) skočí středem na dotyk
         touch("touchStart", [(w["x"] + w["w"] * 0.5, w["y"] + w["h"] * 0.8)])
         pg.wait_for_timeout(60)

@@ -27,9 +27,8 @@ def main():
         s0 = first_bolt_cell(pg)
         w = s0["wrap"]
 
-        grab_pe = pg.evaluate(
-            "getComputedStyle(document.querySelector('.cell.t-bolt .grab')).pointerEvents")
-        c.check(grab_pe == "none", "dotykový terč na desktopu nebere myš", grab_pe)
+        c.check(pg.evaluate("!document.querySelector('.grab')"),
+                "dotykový terč je pryč (kreslil druhé kolečko)")
 
         cx, cy = w["x"] + w["w"] / 2, w["y"] + w["h"] / 2
         pg.mouse.move(cx, cy)

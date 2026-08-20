@@ -1157,7 +1157,6 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
             f'<img loading="lazy" src="{img_url}" width="{outv}" height="{outv}" alt="">'
             f'<svg class="ovl" viewBox="0 0 {outv} {outv}">'
             f'<circle cx="{cxv:.1f}" cy="{cyv:.1f}" r="{rv:.1f}"/></svg>'
-            f'<div class="grab" title="Táhni prstem = posun, dva prsty = velikost"></div>'
             f'<div class="zone zone-left" title="Potvrdit bolt"></div>'
             f'<div class="zone zone-right" title="Označit no-bolt"></div>'
             f'<span class="badge badge-yes">✓</span>'
@@ -1416,19 +1415,16 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
   /* potvrzený bolt: kružnice táhnutelná myší, zóny vypnuté, odznaky klikací */
   .cell.t-bolt .ovl {{ pointer-events:auto; cursor:default; z-index:4; }}
   .cell.t-bolt .ovl.dragging {{ cursor:default; }}
+  /* Zpětná vazba při tažení je na samotné kružnici — jen zesílí a rozsvítí se.
+     Dřív se kreslil ještě druhý, poloprůhledně zelený kruh (dotykový terč),
+     takže to vypadalo jako dvě kolečka s vybarveným středem. */
+  .ovl.dragging circle {{ stroke:#7f7; stroke-width:4; }}
   /* Dotykové ovládání kolečka u potvrzeného boltu: prst kdekoliv nad náhledem
      táhne kolečko, dva prsty mění poloměr. Proto touch-action:none — browser
      si nesmí vzít ani svislý pan, ani pinch-zoom. Scrollovat stránku jde přes
      popisky, slidery a mezery mezi buňkami; u nepotvrzených výřezů se náhled
      chová beze změny. */
   .cell.t-bolt .imgwrap {{ touch-action:none; }}
-  .grab {{ position:absolute; display:none; transform:translate(-50%,-50%);
-    border-radius:50%; touch-action:none; z-index:5; }}
-  .cell.t-bolt .grab {{ display:block; }}
-  /* na desktopu terč nesmí ukrást myš — tažení tam obsluhuje .ovl */
-  @media (hover:hover) {{ .grab {{ pointer-events:none; }} }}
-  .grab.gactive {{ background:rgba(61,221,61,.20);
-    box-shadow:0 0 0 2px rgba(61,221,61,.55) inset; }}
   .cell.t-bolt .zone {{ pointer-events:none; }}
   /* odznaky NAD táhnutelnou kružnicí (z-index 4), ať klik nezačne drag */
   .cell.t-bolt .badge {{ pointer-events:auto; cursor:default; z-index:6; }}
@@ -1656,18 +1652,6 @@ function drawCircle(cell) {{
   circ.setAttribute('cx', OUTH + dx * SC);
   circ.setAttribute('cy', OUTH + dy * SC);
   circ.setAttribute('r',  r * SC);
-
-  // dotykový terč drží pozici kolečka; nikdy menší než MIN_GRAB_PCT náhledu,
-  // aby se malé kolečko dalo chytit prstem
-  const g = cell.querySelector('.grab');
-  if (g) {{
-    const MIN_GRAB_PCT = 22;
-    g.style.left = ((OUTH + dx * SC) / OUTV * 100) + '%';
-    g.style.top  = ((OUTH + dy * SC) / OUTV * 100) + '%';
-    const sz = Math.max(r * SC * 2 / OUTV * 100, MIN_GRAB_PCT);
-    g.style.width = sz + '%';
-    g.style.height = sz + '%';
-  }}
 }}
 
 const saveTimers = new WeakMap();
@@ -1766,7 +1750,6 @@ document.querySelectorAll('.cell').forEach(cell => {{
   // nezakrývá ho. Krátký tap bez posunu dál znamená „dej střed sem".
   // Pinch se chytá na celé buňce, aby nezáleželo, na kterém prvku přistál
   // druhý prst.
-  const grab = cell.querySelector('.grab');
   const wrapEl = cell.querySelector('.imgwrap');
   const pts = new Map();          // aktivní dotyky: pointerId -> {{x, y}}
   let pinch = null;               // {{d0, r0}} = rozestup a poloměr na začátku
@@ -1821,12 +1804,12 @@ document.querySelectorAll('.cell').forEach(cell => {{
     pts.set(e.pointerId, {{x: e.clientX, y: e.clientY}});
     if (pts.size === 2) {{                    // pinch přebíjí rozdělané tažení
       tdrag = null;
-      grab.classList.remove('gactive');
+      ovl.classList.remove('dragging');
       pinch = {{d0: twoDist() || 1, r0: curR()}};
     }} else if (pts.size === 1) {{
       const s = sliders(cell);
       tdrag = {{x0: e.clientX, y0: e.clientY, dx0: s.dx, dy0: s.dy, moved: 0}};
-      grab.classList.add('gactive');
+      ovl.classList.add('dragging');
       wrapEl.setPointerCapture(e.pointerId);
     }}
   }});
@@ -1860,7 +1843,7 @@ document.querySelectorAll('.cell').forEach(cell => {{
     if (tdrag && pts.size === 0) {{
       const wasTap = tdrag.moved < TAP_PX;
       tdrag = null;
-      grab.classList.remove('gactive');
+      ovl.classList.remove('dragging');
       if (wasTap) placeFromEvent(cell, e);   // tap = umísti střed na dotyk
       saveGeom(cell, true);
     }}
