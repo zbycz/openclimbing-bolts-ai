@@ -1163,7 +1163,10 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
             f'<span class="badge badge-yes">✓</span>'
             f'<span class="badge badge-no">✕</span></div>'
             f'<div class="sliders" data-r="{r}" data-dx="{dx:.2f}" data-dy="{dy:.2f}">'
-            f'<label>r<input type="range" class="s-r" min="2" max="30" step="0.1" value="{r}"></label>'
+            # max 100 orig px: u „4x většího náhledu" je vidět 160 px fotky,
+            # takže 30 px poloměru dřív nestačilo ani na polovinu výřezu.
+            # Server poloměr nijak neomezuje, strop je čistě věc slideru.
+            f'<label>r<input type="range" class="s-r" min="2" max="100" step="0.1" value="{r}"></label>'
             f'<label>x<input type="range" class="s-x" min="-{clampv}" max="{clampv}" step="0.5" value="{dx:.2f}"></label>'
             f'<label>y<input type="range" class="s-y" min="-{clampv}" max="{clampv}" step="0.5" value="{dy:.2f}"></label>'
             f'</div>'
