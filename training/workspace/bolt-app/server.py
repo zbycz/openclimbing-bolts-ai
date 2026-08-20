@@ -1419,12 +1419,12 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
      Dřív se kreslil ještě druhý, poloprůhledně zelený kruh (dotykový terč),
      takže to vypadalo jako dvě kolečka s vybarveným středem. */
   .ovl.dragging circle {{ stroke:#7f7; stroke-width:4; }}
-  /* Dotykové ovládání kolečka u potvrzeného boltu: prst kdekoliv nad náhledem
-     táhne kolečko, dva prsty mění poloměr. Proto touch-action:none — browser
-     si nesmí vzít ani svislý pan, ani pinch-zoom. Scrollovat stránku jde přes
-     popisky, slidery a mezery mezi buňkami; u nepotvrzených výřezů se náhled
-     chová beze změny. */
-  .cell.t-bolt .imgwrap {{ touch-action:none; }}
+  /* Dotykové ovládání kolečka u potvrzeného boltu. touch-action:pan-y vrací
+     svislé scrollování prohlížeči — s :none stačilo přejet prstem přes výřez
+     při rolování stránky a bod se posunul. Tažení se proto musí nejdřív
+     „nabít" podržením prstu (viz HOLD_MS v JS); dva prsty (pinch) si browser
+     s pan-y nebere, takže poloměr jde měnit rovnou. */
+  .cell.t-bolt .imgwrap {{ touch-action:pan-y; }}
   .cell.t-bolt .zone {{ pointer-events:none; }}
   /* odznaky NAD táhnutelnou kružnicí (z-index 4), ať klik nezačne drag */
   .cell.t-bolt .badge {{ pointer-events:auto; cursor:default; z-index:6; }}
@@ -1753,8 +1753,11 @@ document.querySelectorAll('.cell').forEach(cell => {{
   const wrapEl = cell.querySelector('.imgwrap');
   const pts = new Map();          // aktivní dotyky: pointerId -> {{x, y}}
   let pinch = null;               // {{d0, r0}} = rozestup a poloměr na začátku
-  let tdrag = null;               // {{x0, y0, dx0, dy0, moved}} běžící tažení
+  let tdrag = null;               // {{x0, y0, dx0, dy0, moved, armed}} tažení
+  let holdTimer = null;
   const TAP_PX = 10;              // pod tolik px se gesto počítá jako tap
+  const HOLD_MS = 320;            // jak dlouho držet, než se tažení nabije
+  const SCROLL_PX = 10;           // ujede-li prst dřív, je to scroll stránky
   drawCircle(cell);               // nasaď terč na kolečko už při načtení
 
   // <input type=range> zaokrouhluje na násobky step, takže drobný pinch
@@ -1807,12 +1810,26 @@ document.querySelectorAll('.cell').forEach(cell => {{
       ovl.classList.remove('dragging');
       pinch = {{d0: twoDist() || 1, r0: curR()}};
     }} else if (pts.size === 1) {{
+      // Tažení se nespustí hned. Rychlé přejetí prstem = scroll stránky a
+      // patří prohlížeči; teprve když prst chvíli stojí, převezmeme gesto.
       const s = sliders(cell);
-      tdrag = {{x0: e.clientX, y0: e.clientY, dx0: s.dx, dy0: s.dy, moved: 0}};
-      ovl.classList.add('dragging');
-      wrapEl.setPointerCapture(e.pointerId);
+      tdrag = {{x0: e.clientX, y0: e.clientY, dx0: s.dx, dy0: s.dy,
+                moved: 0, armed: false}};
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => {{
+        if (!tdrag || tdrag.moved > SCROLL_PX) return;
+        tdrag.armed = true;
+        ovl.classList.add('dragging');
+        try {{ wrapEl.setPointerCapture(e.pointerId); }} catch (_) {{}}
+      }}, HOLD_MS);
     }}
   }});
+
+  // Dokud tažení neběží, necháme dotyk prohlížeči (scroll). Jakmile běží,
+  // musíme scroll potlačit — pan-y by ho jinak rozjel při prvním pohybu.
+  wrapEl.addEventListener('touchmove', (e) => {{
+    if (tdrag && tdrag.armed) e.preventDefault();
+  }}, {{passive: false}});
 
   cell.addEventListener('pointermove', (e) => {{
     if (e.pointerType === 'mouse' || !pts.has(e.pointerId)) return;
@@ -1822,11 +1839,17 @@ document.querySelectorAll('.cell').forEach(cell => {{
       drawCircle(cell);
       saveGeom(cell, false);
     }} else if (tdrag) {{
+      const sdx0 = e.clientX - tdrag.x0, sdy0 = e.clientY - tdrag.y0;
+      tdrag.moved = Math.max(tdrag.moved, Math.hypot(sdx0, sdy0));
+      if (!tdrag.armed) {{
+        // prst ujel dřív, než se tažení nabilo → je to scroll, ruce pryč
+        if (tdrag.moved > SCROLL_PX) {{ clearTimeout(holdTimer); tdrag = null; }}
+        return;
+      }}
       const rect = wrapEl.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
       // px displeje → původní px fotky (náhled je OUTV jednotek = OUTV/SC orig px)
-      const sdx = e.clientX - tdrag.x0, sdy = e.clientY - tdrag.y0;
-      tdrag.moved = Math.max(tdrag.moved, Math.hypot(sdx, sdy));
+      const sdx = sdx0, sdy = sdy0;
       const clamp = v => Math.max(-CLAMPV, Math.min(CLAMPV, v));
       cell.querySelector('.s-x').value =
         clamp(tdrag.dx0 + sdx * OUTV / rect.width / SC).toFixed(2);
@@ -1839,13 +1862,15 @@ document.querySelectorAll('.cell').forEach(cell => {{
 
   const endTouch = (e) => {{
     if (e.pointerType === 'mouse' || !pts.delete(e.pointerId)) return;
+    clearTimeout(holdTimer);
     if (pinch && pts.size < 2) {{ pinch = null; saveGeom(cell, true); }}
     if (tdrag && pts.size === 0) {{
-      const wasTap = tdrag.moved < TAP_PX;
+      const wasTap = !tdrag.armed && tdrag.moved < TAP_PX;
+      const wasDrag = tdrag.armed;
       tdrag = null;
       ovl.classList.remove('dragging');
-      if (wasTap) placeFromEvent(cell, e);   // tap = umísti střed na dotyk
-      saveGeom(cell, true);
+      if (wasTap) placeFromEvent(cell, e);   // krátký tap = umísti střed sem
+      if (wasTap || wasDrag) saveGeom(cell, true);
     }}
   }};
   cell.addEventListener('pointerup', endTouch);

@@ -15,6 +15,14 @@ def main():
         pg.wait_for_timeout(2500)
         first_bolt_cell(pg)
         pg.wait_for_timeout(400)
+        # Sjednoť výchozí poloměr — testy sdílejí jeden server a test_radius
+        # nechává buňku vytaženou skoro na stropu, kde už zvětšovat nejde.
+        pg.evaluate("""() => {
+          const i = document.querySelector('.cell.t-bolt .s-r');
+          i.value = '8';
+          i.dispatchEvent(new Event('input', {bubbles: true}));
+        }""")
+        pg.wait_for_timeout(600)
         s0 = first_bolt_cell(pg)
         w = s0["wrap"]
         cx, cy = w["x"] + w["w"] / 2, w["y"] + w["h"] / 2
