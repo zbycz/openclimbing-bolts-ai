@@ -43,6 +43,24 @@ def main():
         c.check(s_up["r"] > s0["r"] + 0.4, "Ctrl+kolečko nahoru zvětšuje",
                 f"r {s0['r']} -> {s_up['r']}")
 
+        # trackpadový pinch = spousta drobných delt; každá musí něco udělat,
+        # jinak gesto vypadá, že nereaguje (slider zaokrouhloval na krok 0.5)
+        s_small0 = first_bolt_cell(pg)
+        wheel(-3, True)
+        pg.wait_for_timeout(200)
+        s_small1 = first_bolt_cell(pg)
+        c.check(s_small1["r"] != s_small0["r"], "i drobná delta pinche poloměr změní",
+                f"r {s_small0['r']} -> {s_small1['r']}")
+        # a deset takových kroků dá plynulý, ne skokový nárůst
+        rs = []
+        for _ in range(10):
+            wheel(-3, True)
+            pg.wait_for_timeout(90)
+            rs.append(first_bolt_cell(pg)["r"])
+        steps = [round(b - a, 3) for a, b in zip(rs, rs[1:])]
+        c.check(all(x > 0 for x in steps), "roste po každém kroku", str(steps))
+        c.check(max(steps) < 1.0, "kroky jsou drobné, ne skokové", f"max {max(steps)}")
+
         # ctrl + dolů = zmenšit
         for _ in range(8):
             wheel(40, True)

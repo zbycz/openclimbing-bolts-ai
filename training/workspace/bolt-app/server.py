@@ -1163,7 +1163,7 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
             f'<span class="badge badge-yes">✓</span>'
             f'<span class="badge badge-no">✕</span></div>'
             f'<div class="sliders" data-r="{r}" data-dx="{dx:.2f}" data-dy="{dy:.2f}">'
-            f'<label>r<input type="range" class="s-r" min="2" max="30" step="0.5" value="{r}"></label>'
+            f'<label>r<input type="range" class="s-r" min="2" max="30" step="0.1" value="{r}"></label>'
             f'<label>x<input type="range" class="s-x" min="-{clampv}" max="{clampv}" step="0.5" value="{dx:.2f}"></label>'
             f'<label>y<input type="range" class="s-y" min="-{clampv}" max="{clampv}" step="0.5" value="{dy:.2f}"></label>'
             f'</div>'
@@ -1701,7 +1701,11 @@ document.querySelectorAll('.cell').forEach(cell => {{
   cell.querySelector('.zone-left').addEventListener('click', () => mark(cell, 'bolt'));
   cell.querySelector('.zone-right').addEventListener('click', () => mark(cell, 'no-bolt'));
   cell.querySelectorAll('.sliders input').forEach(inp => {{
-    inp.addEventListener('input', () => {{ drawCircle(cell); saveGeom(cell, false); }});
+    inp.addEventListener('input', () => {{
+      // ruční tah sliderem přebíjí přesnou mezihodnotu z gest
+      if (inp.classList.contains('s-r')) rPrecise = null;
+      drawCircle(cell); saveGeom(cell, false);
+    }});
   }});
 
   // u potvrzeného boltu jsou odznaky klikací (zóny jsou vypnuté)
@@ -1767,10 +1771,17 @@ document.querySelectorAll('.cell').forEach(cell => {{
   const TAP_PX = 10;              // pod tolik px se gesto počítá jako tap
   drawCircle(cell);               // nasaď terč na kolečko už při načtení
 
+  // <input type=range> zaokrouhluje na násobky step, takže drobný pinch
+  // (poloměr o procento) se do slideru vůbec nepropsal a gesto vypadalo, že
+  // nereaguje. Přesnou hodnotu si proto držíme vedle a do slideru zapisujeme
+  // až zaokrouhlenou — malé přírůstky se tak sčítají místo aby se ztrácely.
+  let rPrecise = null;
+  const curR = () => (rPrecise !== null ? rPrecise : sliders(cell).r);
   const setR = (v) => {{
     const inp = cell.querySelector('.s-r');
     const lo = parseFloat(inp.min), hi = parseFloat(inp.max);
-    inp.value = Math.max(lo, Math.min(hi, v)).toFixed(1);
+    rPrecise = Math.max(lo, Math.min(hi, v));
+    inp.value = rPrecise.toFixed(2);
   }};
   const twoDist = () => {{
     const [a, b] = [...pts.values()];
@@ -1789,10 +1800,12 @@ document.querySelectorAll('.cell').forEach(cell => {{
     e.preventDefault();
     // exponenciálně: každý „klik" mění poloměr o stejný poměr, ne o pevné px,
     // takže se malá kolečka ladí stejně pohodlně jako velká
-    // 0.0025: jedno cvaknutí myši (deltaY 100) je ~1.28x, trackpadový pinch
-    // chodí po malých deltách a jede plynule. Víc by přeskakovalo přes celý
-    // rozsah slideru jedním pohybem.
-    setR(sliders(cell).r * Math.exp(-e.deltaY * 0.0025));
+    // Trackpadový pinch posílá spoustu drobných delt (jednotky), kolečko myši
+    // jednu velkou (~100). Se stejným koeficientem je buď pinch neznatelný,
+    // nebo cvaknutí myši přeskočí půl rozsahu — proto se citlivost odvíjí od
+    // velikosti delty: ~1.2 % na jednotku u pinche, ~1.28x na cvaknutí myši.
+    const k = Math.abs(e.deltaY) < 20 ? 0.012 : 0.0025;
+    setR(curR() * Math.exp(-e.deltaY * k));
     drawCircle(cell);
     clearTimeout(wheelSave);
     wheelSave = setTimeout(() => saveGeom(cell, true), 300);
@@ -1806,7 +1819,7 @@ document.querySelectorAll('.cell').forEach(cell => {{
     if (pts.size === 2) {{                    // pinch přebíjí rozdělané tažení
       tdrag = null;
       grab.classList.remove('gactive');
-      pinch = {{d0: twoDist() || 1, r0: sliders(cell).r}};
+      pinch = {{d0: twoDist() || 1, r0: curR()}};
     }} else if (pts.size === 1) {{
       const s = sliders(cell);
       tdrag = {{x0: e.clientX, y0: e.clientY, dx0: s.dx, dy0: s.dy, moved: 0}};
