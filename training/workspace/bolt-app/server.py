@@ -1800,6 +1800,25 @@ document.querySelectorAll('.cell').forEach(cell => {{
     wheelSave = setTimeout(() => saveGeom(cell, true), 300);
   }}, {{passive: false}});
 
+  // Prst, který přistál na zeleném kolečku, táhne hned — je to jednoznačný
+  // záměr a terč je malý, takže scrollování nebere. Jinde na náhledu se
+  // tažení dál musí nabít podržením (viz HOLD_MS).
+  const GRAB_PX = 22;             // tolerance kolem kolečka v px displeje
+  const onCircle = (e) => {{
+    const rect = wrapEl.getBoundingClientRect();
+    if (!rect.width || !rect.height) return false;
+    const {{r, dx, dy}} = sliders(cell);
+    const vbx = (e.clientX - rect.left) / rect.width * OUTV;
+    const vby = (e.clientY - rect.top) / rect.height * OUTV;
+    const d = Math.hypot(vbx - (OUTH + dx * SC), vby - (OUTH + dy * SC));
+    const pad = GRAB_PX * OUTV / rect.width;   // px displeje → jednotky viewBoxu
+    const rv = r * SC;
+    // Terčem je jen to, co je opravdu vidět: zelený prstenec (kolečko nemá
+    // výplň) a bod ve středu. Celý vnitřek brát nejde — při velkém poloměru
+    // pokryje skoro celou dlaždici a nezbylo by kde scrollovat.
+    return Math.abs(d - rv) <= pad || d <= pad;
+  }};
+
   cell.addEventListener('pointerdown', (e) => {{
     if (e.pointerType === 'mouse') return;
     if (!cell.classList.contains('t-bolt')) return;
@@ -1810,18 +1829,26 @@ document.querySelectorAll('.cell').forEach(cell => {{
       ovl.classList.remove('dragging');
       pinch = {{d0: twoDist() || 1, r0: curR()}};
     }} else if (pts.size === 1) {{
-      // Tažení se nespustí hned. Rychlé přejetí prstem = scroll stránky a
-      // patří prohlížeči; teprve když prst chvíli stojí, převezmeme gesto.
+      // Prst na zeleň = tažení hned. Jinde na náhledu se tažení nespustí
+      // hned: rychlé přejetí prstem je scroll stránky a patří prohlížeči,
+      // teprve když prst chvíli stojí, přebíráme gesto.
       const s = sliders(cell);
       tdrag = {{x0: e.clientX, y0: e.clientY, dx0: s.dx, dy0: s.dy,
                 moved: 0, armed: false}};
-      clearTimeout(holdTimer);
-      holdTimer = setTimeout(() => {{
-        if (!tdrag || tdrag.moved > SCROLL_PX) return;
+      const arm = () => {{
         tdrag.armed = true;
         ovl.classList.add('dragging');
         try {{ wrapEl.setPointerCapture(e.pointerId); }} catch (_) {{}}
-      }}, HOLD_MS);
+      }};
+      clearTimeout(holdTimer);
+      if (onCircle(e)) {{
+        arm();                                // přímo za kolečko = hned
+      }} else {{
+        holdTimer = setTimeout(() => {{
+          if (!tdrag || tdrag.moved > SCROLL_PX) return;
+          arm();
+        }}, HOLD_MS);
+      }}
     }}
   }});
 

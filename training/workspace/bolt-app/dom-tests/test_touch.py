@@ -4,6 +4,8 @@ Kontroluje tři věci, které jinak nejde ověřit jinak než skutečným prstem
   1. tažení jedním prstem odkudkoliv nad náhledem posune kolečko o TOTÉŽ dx/dy
   2. krátký tap pořád skočí středem na místo dotyku
   3. dva prsty (pinch) mění poloměr
+  4. rychlé přejetí prstem je scroll stránky a bodem nehne
+  5. chycení přímo za zelený prstenec se ale chytí hned, bez podržení
 
 Pozor na rohy náhledu: v levém/pravém horním rohu sedí odznaky ✓ a ✕ (na
 mobilu 60x60 px) a tap do nich bolt odznačí — testy se jim vyhýbají.
@@ -122,6 +124,35 @@ def main():
                 f"({s_before['dx']}, {s_before['dy']}) -> ({s_after['dx']}, {s_after['dy']})")
         c.check(s_after["touchAction"] == "pan-y",
                 "náhled nechává svislý scroll prohlížeči", s_after["touchAction"])
+
+        # 5. chycení přímo za zelený prstenec táhne HNED, bez podržení
+        pg.evaluate("""() => {
+          const c = document.querySelector('.cell.t-bolt');
+          c.querySelector('.s-x').value = '0';
+          c.querySelector('.s-y').value = '0';
+          const i = c.querySelector('.s-r');
+          i.value = '8';
+          i.dispatchEvent(new Event('input', {bubbles: true}));
+        }""")
+        pg.wait_for_timeout(600)
+        s_r0 = first_bolt_cell(pg)
+        w = s_r0["wrap"]
+        # střed kolečka a bod na prstenci pod ním, v px displeje
+        ccx = w["x"] + (OUTV / 2 + s_r0["dx"] * SC) / OUTV * w["w"]
+        ccy = w["y"] + (OUTV / 2 + s_r0["dy"] * SC) / OUTV * w["h"]
+        ring = ccy + s_r0["r"] * SC / OUTV * w["h"]
+        touch("touchStart", [(ccx, ring)])
+        pg.wait_for_timeout(80)             # jen tolik, co potřebuje pointer capture
+        for i in range(1, 7):               # žádné podržení, hned táhnout
+            touch("touchMove", [(ccx, ring - 6 * i)])
+            pg.wait_for_timeout(20)
+        touch("touchEnd", [])
+        pg.wait_for_timeout(700)
+        s_r1 = first_bolt_cell(pg)
+        moved = s_r0["dy"] - s_r1["dy"]
+        c.check(s_r1["id"] == s_r0["id"], "pořád tatáž buňka", s_r1["id"])
+        c.check(moved > 1.0, "tažení za prstenec se chytí bez podržení",
+                f"dy {s_r0['dy']} -> {s_r1['dy']}")
 
         c.check(not errors, "žádné chyby v konzoli", "; ".join(errors[:3]))
         b.close()
