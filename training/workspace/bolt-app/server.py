@@ -8,6 +8,7 @@ Routy:
   /crop-img?file=&x=&y=   JPEG výřezu generovaný Pillow (±20 px), disk-cache
   /api/mark   POST        toggle type has-bolt⇄no-bolt výřezu v crop_labels
   /data.json /crops.json /images/*   statické soubory
+  /download-db                       stažení kopie DB (SQLite backup API)
 """
 
 import html
@@ -16,7 +17,9 @@ import json
 import math
 import os
 import sqlite3
+import tempfile
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler
 from socketserver import ThreadingTCPServer
@@ -1232,6 +1235,10 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
         f'<code>{html.escape(n)}</code> <i>{html.escape(t)}</i>'
         for n, t in gs["schema"]
     )
+    try:
+        db_size_mb = "%.1f" % (os.path.getsize(DB_PATH) / 1048576.0)
+    except OSError:
+        db_size_mb = "?"
     stats_html = (
         '<div class="stats">'
         '<div class="srow">'
@@ -1255,6 +1262,10 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
         'JSON pole 1:n vazeb na OSM prvky, např. '
         '<code>[{"osmId": 123, "osmType": "node", "key": "wikimedia_commons:path", "order": 1}, …]</code>'
         '</span></div>'
+        f'<div class="srow dl"><a class="btn" href="/download-db">'
+        f'⬇ Stáhnout databázi</a>'
+        f'<span>{db_size_mb} MB · konzistentní snímek přes SQLite backup API, '
+        f'takže se nestáhne rozepsaná uprostřed zápisu</span></div>'
         '</div>'
     )
 
@@ -1460,6 +1471,8 @@ def render_crops(page: int, filter_results: str = "", show: str = "",
   .stats b {{ color:#eee; }}
   .stats code {{ background:#222; padding:1px 5px; border-radius:4px; color:#9cf; }}
   .stats .schema i {{ color:#8a8; font-style:normal; }}
+  .stats .dl {{ align-items:center; margin-top:10px;
+    border-top:1px solid #333; padding-top:10px; }}
 </style></head><body>
 <header>
   <h1>Výřezy borháků</h1>
@@ -2196,6 +2209,36 @@ class Handler(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
+    def _send_db(self):
+        """Stažení celé DB. Kopie se dělá online backup API, ne prostým read:
+        appka do DB píše i během stahování a syrový soubor by mohl odejít
+        rozepsaný uprostřed transakce."""
+        fd, tmp = tempfile.mkstemp(prefix="boltdb-", suffix=".sqlite")
+        os.close(fd)
+        try:
+            src = sqlite3.connect(DB_PATH)
+            dst = sqlite3.connect(tmp)
+            try:
+                with dst:
+                    src.backup(dst)
+            finally:
+                dst.close()
+                src.close()
+            with open(tmp, "rb") as f:
+                body = f.read()
+        except Exception as e:            # ať stránka dostane čitelnou hlášku
+            self._send(500, ("nelze udělat kopii DB: %s" % e).encode("utf-8"),
+                       "text/plain; charset=utf-8")
+            return
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        name = "climbing_paths_%s.sqlite" % time.strftime("%Y-%m-%d")
+        self._send(200, body, "application/octet-stream",
+                   {"Content-Disposition": 'attachment; filename="%s"' % name})
+
     def _send_json(self, obj):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self._send(200, body, "application/json; charset=utf-8")
@@ -2240,6 +2283,8 @@ class Handler(BaseHTTPRequestHandler):
             size = qs.get("size", [""])[0]
             tile = qs.get("tile", [""])[0]
             self._send(200, render_crops(page, filter_results, show, size, tile))
+        elif path == "/download-db":
+            self._send_db()
         elif path == "/crops-precise-571":
             self._send(200, render_precise_page())
         elif path.startswith("/crops-precise-571/"):

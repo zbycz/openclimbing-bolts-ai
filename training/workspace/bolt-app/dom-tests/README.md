@@ -50,6 +50,7 @@ Na aarch64 v LXD kontejneru vyžaduje `libatk1.0-0t64`, `libatk-bridge2.0-0t64`,
 | `test_touch.py` | prst táhne kolečko o stejné dx/dy, tap přemístí střed, pinch mění poloměr |
 | `test_mouse.py` | tažení myší na desktopu funguje a dotykový terč mu nekrade události |
 | `test_view.py` | `/view` se vykreslí (obrázek, značky, výřezy) a výřezy jsou ~1:1 |
+| `test_download.py` | tlačítko dole stáhne DB a stažená kopie projde `integrity_check` |
 | `dt_util.py` | společné pomůcky + pojistka proti běhu na ostré DB |
 | `jsparse.js` | naparsuje doručený JS (bun/node), odhalí rozbitou syntaxi po zakomentování |
 
