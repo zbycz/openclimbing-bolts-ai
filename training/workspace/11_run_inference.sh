@@ -20,7 +20,7 @@ cat > "$TMP/kernel-metadata.json" <<EOF
   "enable_gpu": false,
   "enable_internet": true,
   "dataset_sources": [
-    "${KAGGLE_USER}/bolt-photos",
+    "${KAGGLE_USER}/bolt-photos-v2",
     "${KAGGLE_USER}/bolt-model-${VERSION}"
   ],
   "competition_sources": [],

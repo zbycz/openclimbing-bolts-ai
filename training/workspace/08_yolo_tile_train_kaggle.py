@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Step 08 — Kaggle kernel: YOLOv8n tiling training for bolt detection
-# Datasets: bolt-photos + bolt-points
+# Datasets: bolt-photos-v2 + bolt-points
 # Images are sliced into 1024px tiles at native resolution (a bolt at ~10px stays ~10px).
 import os, subprocess, sys, textwrap
 
@@ -53,10 +53,25 @@ with open(TRAIN_SCRIPT, "w") as f:
             h = glob.glob(f"/kaggle/input/**/{name}", recursive=True)
             return h[0] if h else None
 
-        PHOTOS  = find_dir("bolt-photos")
+        PHOTOS  = find_dir("bolt-photos-v2")
         PTS_DIR = find_dir("bolt-points")
-        points  = json.load(open(os.path.join(PTS_DIR, "points.json")))
+        doc     = json.load(open(os.path.join(PTS_DIR, "points.json")))
+        assert doc.get("version") == 2, f"points.json version {doc.get('version')}, expected 2"
+        points  = doc["photos"]
         print(f"PHOTOS={PHOTOS}  photos with points={len(points)}", flush=True)
+
+        # Filenames in bolt-photos-v2 are slugs and so are the keys here, so a
+        # plain join is enough — no guessing at how Kaggle mangled a name.
+        # Anything that still fails to resolve is a broken upload, not a photo
+        # to quietly drop: an earlier run trained on 85% of the data this way
+        # and nothing in the log said so.
+        missing = [k for k in points if not os.path.isfile(os.path.join(PHOTOS, k))]
+        if missing:
+            print(f"ERROR: {len(missing)} of {len(points)} photos are not in the dataset:",
+                  flush=True)
+            for k in missing[:40]:
+                print(f"    {k}  ({points[k]['file']})", flush=True)
+            raise SystemExit("re-run step 05 before training")
 
         files = sorted(points.keys())
         random.Random(SEED).shuffle(files)
@@ -67,29 +82,6 @@ with open(TRAIN_SCRIPT, "w") as f:
         for sub in ("images/train","images/val","labels/train","labels/val"):
             os.makedirs(os.path.join(BASE, sub), exist_ok=True)
 
-        # Kaggle strips non-ASCII characters from uploaded filenames (e.g.
-        # "Kapucínské skály.jpg" becomes "Kapucnsk skly.jpg" on the dataset),
-        # so most diacritic-heavy names never match by exact/glob lookup below.
-        # Index every file in PHOTOS by its ASCII-only characters as a fallback.
-        def _ascii_key(s):
-            return "".join(c for c in s if ord(c) < 128)
-
-        _ascii_index = {}
-        for _f in os.listdir(PHOTOS):
-            _ascii_index.setdefault(_ascii_key(_f), _f)
-
-        def find_photo(fname):
-            p = os.path.join(PHOTOS, fname)
-            if os.path.isfile(p): return p
-            stem = os.path.splitext(fname)[0]
-            for ext in (".jpg",".jpeg",".JPG",".JPEG",".png"):
-                p = os.path.join(PHOTOS, stem + ext)
-                if os.path.isfile(p): return p
-            h = glob.glob(os.path.join(PHOTOS, "**", fname), recursive=True)
-            if h: return h[0]
-            hit = _ascii_index.get(_ascii_key(fname))
-            return os.path.join(PHOTOS, hit) if hit else None
-
         def tile_pos(size):
             stride = int(TILE * (1 - OVERLAP))
             if size <= TILE: return [0]
@@ -97,17 +89,24 @@ with open(TRAIN_SCRIPT, "w") as f:
             if pos[-1] != size - TILE: pos.append(size - TILE)
             return pos
 
-        stats = {"tiles": 0, "pos": 0, "neg": 0, "boxes": 0, "skip": 0}
+        stats = {"tiles": 0, "pos": 0, "neg": 0, "hardneg": 0, "boxes": 0, "skip": 0}
 
         def process(fname, split):
-            p = find_photo(fname)
-            if not p: stats["skip"] += 1; return
+            p = os.path.join(PHOTOS, fname)
             try: im = Image.open(p).convert("RGB")
-            except: stats["skip"] += 1; return
+            except Exception as e:
+                print(f"  unreadable {fname}: {e}", flush=True)
+                stats["skip"] += 1; return
             W, H = im.size
+            rec = points[fname]
             abolts = [(cx * W, cy * H, r if r else DEFAULT_R)
-                      for cx, cy, r in points[fname]]
-            stem = os.path.splitext(os.path.basename(p))[0].replace(" ", "_")
+                      for cx, cy, r in rec["bolts"]]
+            # Crops a human opened and confirmed hold no bolt. They are the
+            # background the model gets wrong — rusty stains, bolt-shaped
+            # shadows, old chipped hangers — so the tiles covering them are
+            # worth more than a random empty patch of rock and are always kept.
+            anegs = [(cx * W, cy * H) for cx, cy, _ in rec["negatives"]]
+            stem = os.path.splitext(fname)[0]
             for tx in tile_pos(W):
                 for ty in tile_pos(H):
                     tw = min(TILE, W - tx); th = min(TILE, H - ty)
@@ -121,7 +120,10 @@ with open(TRAIN_SCRIPT, "w") as f:
                             ncx = ((x1+x2)/2-tx)/tw; ncy = ((y1+y2)/2-ty)/th
                             labels.append(f"0 {ncx:.6f} {ncy:.6f} {bw/tw:.6f} {bh/th:.6f}")
                     is_pos = bool(labels)
-                    if not is_pos and random.random() > NEG_KEEP: continue
+                    is_hard = not is_pos and any(
+                        tx <= px < tx + tw and ty <= py < ty + th for px, py in anegs)
+                    if not is_pos and not is_hard and random.random() > NEG_KEEP:
+                        continue
                     im.crop((tx, ty, tx+tw, ty+th)).save(
                         os.path.join(BASE, f"images/{split}/{stem}__{tx}_{ty}.jpg"),
                         "JPEG", quality=92)
@@ -129,6 +131,7 @@ with open(TRAIN_SCRIPT, "w") as f:
                         lf.write("\n".join(labels))
                     stats["tiles"] += 1; stats["boxes"] += len(labels)
                     stats["pos" if is_pos else "neg"] += 1
+                    if is_hard: stats["hardneg"] += 1
             im.close()
 
         print("=== TILING ===", flush=True)

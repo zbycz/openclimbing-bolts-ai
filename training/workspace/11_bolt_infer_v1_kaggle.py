@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Step 11 — Kaggle kernel: ONNX inference on all photos
-# Datasets: bolt-photos + bolt-model-v1
+# Datasets: bolt-photos-v2 + bolt-model-v1
 # Output: detections_v1.sqlite (normalized bbox coordinates)
 import os, glob, sqlite3, time
 import numpy as np
@@ -13,10 +13,21 @@ def find_dir(name):
     h = glob.glob(f"/kaggle/input/**/{name}", recursive=True)
     return h[0] if h else None
 
-PHOTOS_DIR = find_dir("bolt-photos")
+PHOTOS_DIR = find_dir("bolt-photos-v2")
 MODEL_DIR  = find_dir("bolt-model-v1")
 print(f"PHOTOS={PHOTOS_DIR}", flush=True)
 print(f"MODEL={MODEL_DIR}", flush=True)
+
+# bolt-photos-v2 stores photos under slugs, because Kaggle rewrites any name
+# with a non-ASCII character or a comma in it. filemap.json maps each slug back
+# to its Commons title, so detections stay joinable against crop_labels.
+FILEMAP = {}
+_fm = os.path.join(PHOTOS_DIR, "filemap.json")
+if os.path.isfile(_fm):
+    import json
+    with open(_fm, encoding="utf-8") as _f:
+        FILEMAP = json.load(_f)
+print(f"filemap entries: {len(FILEMAP)}", flush=True)
 
 # Find the ONNX file (best_v1.onnx or best.onnx)
 MODEL_PATH = None
@@ -121,7 +132,7 @@ for i, fname in enumerate(all_imgs):
         print(f"  ERROR {fname}: {e}", flush=True); continue
     conn.executemany(
         "INSERT INTO detections (image,cx,cy,w,h,score,img_w,img_h) VALUES (?,?,?,?,?,?,?,?)",
-        [(fname, b[0], b[1], b[2], b[3], b[4], W, H) for b in boxes]
+        [(FILEMAP.get(fname, fname), b[0], b[1], b[2], b[3], b[4], W, H) for b in boxes]
     )
     conn.commit()
     total_det += len(boxes)
